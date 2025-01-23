@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser;
 use berth::{arguments::Arguments, docker, presets::Preset};
+use clap::Parser;
 
 use log::info;
 use log4rs::append::file::FileAppender;
@@ -37,14 +37,20 @@ fn get_config_path(config_path: &Path) -> Result<PathBuf, String> {
     }
 
     if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
-        let xdg_path = Path::new(&xdg_config).join(".config").join("ch.config");
+        let xdg_path = Path::new(&xdg_config)
+            .join(".config")
+            .join("berth")
+            .join("config.toml");
         if xdg_path.exists() {
             return Ok(xdg_path);
         }
     }
 
     if let Ok(home) = env::var("HOME") {
-        let home_path = Path::new(&home).join(".config").join("ch.config");
+        let home_path = Path::new(&home)
+            .join(".config")
+            .join("berth")
+            .join("config.toml");
         if home_path.exists() {
             return Ok(home_path);
         }
@@ -59,7 +65,7 @@ fn main() {
     info!("Start up");
 
     let args = Arguments::parse();
-    let config_path_arg = args.config_file.unwrap();
+    let config_path_arg = args.config_file.unwrap_or(PathBuf::new());
 
     let config_path = get_config_path(&config_path_arg).unwrap();
     info!("Using config file at {:?}", config_path);
