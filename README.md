@@ -5,3 +5,6 @@ Requires:
 - Rust 
 - Docker
 - Docker CLI
+
+
+`cargo run -- --config-file examples/basic.toml TestContainer`
