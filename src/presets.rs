@@ -7,6 +7,8 @@ pub struct Env {
     pub image: String,
     pub exec_cmds: Option<Vec<String>>,
     pub mounts: Option<Vec<String>>,
+    pub init_cmd: String,
+    pub user: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

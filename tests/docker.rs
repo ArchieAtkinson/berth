@@ -34,7 +34,7 @@ fn generate_random_docker_name() -> String {
     const LENGTH: usize = 63;
     let mut rng = thread_rng();
 
-    let first_chars: &str  = "dh-test-";
+    let first_chars: &str = "dh-test-";
 
     // Characters for the rest of the positions [a-zA-Z0-9_.-]
     let other_chars: Vec<char> = (b'a'..=b'z')
@@ -60,15 +60,16 @@ fn basic_exec() {
     writeln!(tmp_file, "Hello World").unwrap();
 
     let container_mount_dir = "/home/mount";
-    
+
     let container_name = generate_random_docker_name();
     let content = formatdoc!(
         r#"
         [[env]]
         name = "{}"
         image = "alpine:edge"
-        exec_cmds = ["apk", "add", "helix", "bash"]
+        exec_cmds = ["apk add helix bash"]
         mounts = ["{}:{}"]
+        init_cmd = "/bin/ash"
         "#,
         container_name,
         tmp_dir.path().to_str().unwrap(),
@@ -82,17 +83,24 @@ fn basic_exec() {
 
     let run_result = (|| -> Result<(), rexpect::error::Error> {
         let mut test_command = Command::new(bin_path);
-        test_command.args(["--config-file", preset.path().to_str().unwrap(), &container_name]);
+        test_command.args([
+            "--config-path",
+            preset.path().to_str().unwrap(),
+            &container_name,
+        ]);
 
         let mut process = spawn_command(test_command, Some(50000))?;
         process.send_line("clear")?;
-        
+
         process.send_line("which hx")?;
         process.exp_regex(".*?/usr/bin/hx.*?")?;
 
-        process.send_line(&format!("cat {}/{}", container_mount_dir, mounted_file_name))?;
+        process.send_line(&format!(
+            "cat {}/{}",
+            container_mount_dir, mounted_file_name
+        ))?;
         process.exp_regex(".*?Hello World.*?")?;
-        
+
         process.send_line("exit")?;
         process.exp_eof()?;
 
@@ -107,4 +115,4 @@ fn basic_exec() {
     tmp_dir.close().unwrap();
     run_result.expect("Failed");
     cleanup_status.expect("Failed to clean up");
-} 
+}
