@@ -89,8 +89,10 @@ fn basic_exec() {
             &container_name,
         ]);
 
-        let mut process = spawn_command(test_command, Some(50000))?;
+        let mut process = spawn_command(test_command, Some(5000))?;
         process.send_line("clear")?;
+
+        process.exp_string("/ #")?;
 
         process.send_line("which hx")?;
         process.exp_regex(".*?/usr/bin/hx.*?")?;

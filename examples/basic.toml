@@ -1,5 +1,6 @@
 [[env]]
 name = "TestContainer"
 image = "alpine:edge"
-exec_cmds = ["apk", "add", "helix", "bash"]
-mounts = ["${HOME}/.config/helix:/root/.config/helix"]
+exec_cmds = ["apk add helix bash"]
+init_cmd = "/bin/ash"
+mounts = ["/home/aa/.config/helix:/root/.config/helix"]

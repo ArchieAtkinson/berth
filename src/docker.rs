@@ -1,79 +1,129 @@
 use crate::presets::Env;
-use envmnt::types::{ExpandOptions, ExpansionType};
 use log::info;
-use std::process::{exit, Command};
+use std::process::Command;
 
-pub fn enter(name: &str, envs: Vec<Env>) -> Result<(), std::io::Error> {
-    let env = envs.iter().find(|e| e.name == name).unwrap();
+#[derive(Debug, thiserror::Error)]
+pub enum DockerError {
+    #[error("The following command failed:\n {cmd}\nWith:\n{stderr}")]
+    CommandFailed { cmd: String, stderr: String },
 
-    let mut create_args = vec!["create", "-it", "--name", &env.name];
-    if let Some(user) = &env.user {
-        create_args.extend_from_slice(&["-u", user]);
+    #[error("The following command failed:\n {cmd}\nDue to an unknown signal")]
+    CommandKilled { cmd: String },
+}
+
+struct Docker {
+    env: Env,
+}
+
+impl Docker {
+    pub fn new(env: Env) -> Self {
+        Docker { env }
     }
-    let mounts = env.mounts.as_ref().unwrap();
-    let mounts_ref: Vec<String> = mounts
-        .iter()
-        .map(|mount| {
-            let mut env_options = ExpandOptions::new();
-            env_options.expansion_type = Some(ExpansionType::Unix);
-            envmnt::expand(mount, Some(env_options))
-        })
-        .collect();
-
-    for expanded_mount in &mounts_ref {
-        create_args.push("-v");
-        create_args.push(expanded_mount.as_str());
+    pub fn setup_new_container(&self) -> Result<(), DockerError> {
+        self.delete_container_if_exists()?;
+        self.create_container()?;
+        self.start_container()?;
+        self.exec_setup_commands()
     }
-    create_args.push(&env.image);
 
-    info!("{:?}", create_args);
+    fn create_container(&self) -> Result<(), DockerError> {
+        let mut create_args = vec!["create", "-it", "--name", &self.env.name];
 
-    println!("Creating your container...\n");
-    let docker_create = Command::new("docker").args(&create_args).output()?;
-    info!("{:#?}", String::from_utf8(docker_create.stdout));
-    let status_code = docker_create.status.code();
-    match status_code {
-        None => {
-            eprintln!("Command interrupted by signal, exiting...");
-            exit(1);
+        if let Some(user) = &self.env.user {
+            create_args.extend_from_slice(&["-u", user]);
         }
-        Some(0) => (),
-        Some(n) => {
-            eprintln!(
-                "Error creating container with command:\n{} {}\n\n",
-                "docker",
-                shell_words::join(create_args)
-            );
-            eprintln!(
-                "Error:\n{}",
-                String::from_utf8(docker_create.stderr).unwrap()
-            );
-            exit(n);
+
+        for mount in self.env.mounts.iter().flatten() {
+            create_args.extend_from_slice(&["-v", &mount]);
         }
+
+        create_args.push(&self.env.image);
+        Self::run_docker_command(create_args)
     }
 
-    println!("Starting your container...");
-    let docker_start = Command::new("docker").args(["start", &env.name]).output()?;
-    println!("{:?}", String::from_utf8(docker_start.stdout));
-    println!("{:?}", String::from_utf8(docker_start.stderr));
-
-    let cmds = env.exec_cmds.as_ref().unwrap();
-    for cmd in cmds {
-        let cmd = format!("{} {} {}", "exec", &env.name, cmd);
-        let shell_args = shell_words::split(&cmd).unwrap();
-        info!("{:?}", shell_args);
-        let docker_exec = Command::new("docker").args(shell_args).output()?;
-        println!("{:?}", String::from_utf8(docker_exec.stdout));
-        println!("{:?}", String::from_utf8(docker_exec.stderr));
+    fn start_container(&self) -> Result<(), DockerError> {
+        let start_args = vec!["start", &self.env.name];
+        Self::run_docker_command(start_args)
     }
 
-    println!("Entering your container...");
-    let status = Command::new("docker")
-        .args(["exec", "-it", &env.name, &env.init_cmd])
-        .status()?;
+    fn exec_setup_commands(&self) -> Result<(), DockerError> {
+        if let Some(cmds) = &self.env.exec_cmds {
+            for cmd in cmds {
+                let exec_full_cmd = format!("{} {} {}", "exec", &self.env.name, cmd);
+                let exec_args = shell_words::split(&exec_full_cmd).unwrap();
+                let exec_args = exec_args.iter().map(|s| s.as_str()).collect();
+                Self::run_docker_command(exec_args)?;
+            }
+        }
+        Ok(())
+    }
 
-    std::process::exit(status.code().unwrap_or(0));
+    pub fn enter_container(&self) -> Result<(), DockerError> {
+        let args = vec!["exec", "-it", &self.env.name, &self.env.init_cmd];
+        Command::new("docker").args(&args).status().unwrap();
 
-    #[allow(unreachable_code)]
-    Ok(())
+        info!("docker {:?}", args);
+
+        Ok(())
+    }
+
+    fn delete_container_if_exists(&self) -> Result<(), DockerError> {
+        let filter = format!("name={}", &self.env.name);
+        let ls_args = vec!["container", "ls", "-a", "--quiet", "--filter", &filter];
+
+        let ls_output = Command::new("docker").args(&ls_args).output().unwrap();
+
+        if ls_output.stdout.is_empty() {
+            return Ok(());
+        }
+
+        let rm_args = vec!["container", "rm", &self.env.name];
+        Self::run_docker_command(rm_args)
+    }
+
+    fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
+        let container_engine_command = "docker";
+        let output = Command::new(container_engine_command)
+            .args(&args)
+            .output()
+            .unwrap();
+        let mut command = vec![container_engine_command];
+        command.extend(args);
+        let command = shell_words::join(command);
+
+        info!("{:#?}", String::from_utf8(output.stdout.clone()));
+
+        let status_code = output.status.code();
+        match status_code {
+            None => {
+                let err = DockerError::CommandKilled { cmd: command };
+                return Err(err);
+            }
+            Some(0) => (),
+            Some(_n) => {
+                let err = DockerError::CommandFailed {
+                    cmd: command,
+                    stderr: String::from_utf8(output.stderr.clone()).unwrap(),
+                };
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn stop_container(&self) -> Result<(), DockerError> {
+        Self::run_docker_command(vec!["stop", "-t", "0", &self.env.name])
+    }
+}
+
+pub fn enter(name: &str, envs: Vec<Env>) -> Result<(), DockerError> {
+    let env = envs.into_iter().find(|e| e.name == name).unwrap();
+
+    let docker = Docker::new(env);
+
+    docker.setup_new_container()?;
+
+    docker.enter_container()?;
+
+    docker.stop_container()
 }

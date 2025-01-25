@@ -54,4 +54,8 @@ fn main() {
     }
 
     docker::enter(&app_config.env_name, preset.env).unwrap();
+
+    info!("Done!");
+
+    exit(0)
 }
