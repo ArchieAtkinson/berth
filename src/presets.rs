@@ -1,9 +1,20 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum PresetError {
+    #[error("{message}")]
+    TomlParse { message: String },
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Env {
-    pub name: String,
+    #[serde(skip_deserializing)]
+    pub name: String, // Get this from the Preset
+
     pub image: String,
     pub exec_cmds: Option<Vec<String>>,
     pub mounts: Option<Vec<String>>,
@@ -14,11 +25,25 @@ pub struct Env {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preset {
-    pub env: Vec<Env>,
+    pub env: HashMap<String, Env>,
 }
 
 impl Preset {
-    pub fn new(file: &str) -> Result<Preset, toml::de::Error> {
-        toml::from_str::<Preset>(file)
+    pub fn new(file: &str) -> Result<Preset, PresetError> {
+        match toml::from_str::<Preset>(file) {
+            Ok(v) => Ok(Preset {
+                env: v
+                    .env
+                    .into_iter()
+                    .map(|(key, mut env)| {
+                        env.name = key.clone();
+                        (key, env)
+                    })
+                    .collect(),
+            }),
+            Err(e) => Err(PresetError::TomlParse {
+                message: e.to_string(),
+            }),
+        }
     }
 }

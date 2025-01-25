@@ -6,51 +6,6 @@ use tempfile::{NamedTempFile, TempDir};
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
-// #[test]
-// fn basic_exec() {
-//     let content = indoc!(
-//         r#"
-//         [[env]]
-//         name = "TestContainer"
-//         image = "alpine:edge"
-//         exec_cmds = ["apk", "add", "helix", "bash"]
-//         "#
-//     );
-
-//     let mut preset = NamedTempFile::new().unwrap();
-//     preset.write(content.as_bytes()).unwrap();
-
-//     let mut cmd = Command::cargo_bin(BINARY).unwrap();
-//     let assert = cmd
-//         .args(["--config-file", preset.path().to_str().unwrap()])
-//         .write_stdin("which hx\n")
-//         .assert();
-//     assert.success().stdout("/bin/usr/hx");
-
-//     preset.close().unwrap();
-// }
-
-fn generate_random_docker_name() -> String {
-    const LENGTH: usize = 63;
-    let mut rng = thread_rng();
-
-    let first_chars: &str = "dh-test-";
-
-    // Characters for the rest of the positions [a-zA-Z0-9_.-]
-    let other_chars: Vec<char> = (b'a'..=b'z')
-        .chain(b'A'..=b'Z')
-        .chain(b'0'..=b'9')
-        .chain(vec![b'_', b'.', b'-'])
-        .map(char::from)
-        .collect();
-
-    let rest: String = (0..LENGTH - first_chars.len())
-        .map(|_| other_chars[rng.gen_range(0..other_chars.len())])
-        .collect();
-
-    format!("{}{}", first_chars, rest)
-}
-
 #[test]
 fn basic_exec() {
     let tmp_dir = TempDir::new().unwrap();
@@ -64,8 +19,7 @@ fn basic_exec() {
     let container_name = generate_random_docker_name();
     let content = formatdoc!(
         r#"
-        [[env]]
-        name = "{}"
+        [env."{}"]
         image = "alpine:edge"
         exec_cmds = ["apk add helix bash"]
         mounts = ["{}:{}"]
@@ -103,6 +57,9 @@ fn basic_exec() {
         ))?;
         process.exp_regex(".*?Hello World.*?")?;
 
+        process.send_line("echo $0")?;
+        process.exp_regex(".*?/bin/ash.*?")?;
+
         process.send_line("exit")?;
         process.exp_eof()?;
 
@@ -111,10 +68,31 @@ fn basic_exec() {
 
     let cleanup_status = Command::new("docker")
         .args(["rm", "-f", &container_name.to_string()])
-        .status();
+        .output();
 
     preset.close().unwrap();
     tmp_dir.close().unwrap();
-    run_result.expect("Failed");
-    cleanup_status.expect("Failed to clean up");
+    run_result.unwrap();
+    cleanup_status.unwrap();
+}
+
+fn generate_random_docker_name() -> String {
+    const LENGTH: usize = 63;
+    let mut rng = thread_rng();
+
+    let first_chars: &str = "dh-test-";
+
+    // Characters for the rest of the positions [a-zA-Z0-9_.-]
+    let other_chars: Vec<char> = (b'a'..=b'z')
+        .chain(b'A'..=b'Z')
+        .chain(b'0'..=b'9')
+        .chain(vec![b'_', b'.', b'-'])
+        .map(char::from)
+        .collect();
+
+    let rest: String = (0..LENGTH - first_chars.len())
+        .map(|_| other_chars[rng.gen_range(0..other_chars.len())])
+        .collect();
+
+    format!("{}{}", first_chars, rest)
 }

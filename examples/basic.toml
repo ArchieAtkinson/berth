@@ -1,5 +1,4 @@
-[[env]]
-name = "TestContainer"
+[env.TestContainer]
 image = "alpine:edge"
 exec_cmds = ["apk add helix bash"]
 init_cmd = "/bin/ash"

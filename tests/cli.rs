@@ -20,7 +20,9 @@ fn no_commands() {
     assert!(app_config.is_err());
 
     let err = app_config.err().unwrap();
-    assert!(err.contains("the following required arguments were not provided"))
+    assert!(err
+        .to_string()
+        .contains("the following required arguments were not provided"))
 }
 
 #[test]
@@ -73,7 +75,7 @@ fn env_name_with_no_config_in_env() {
 
     let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
     assert_eq!(
-        app_config,
+        app_config.to_string(),
         "Could not find config file in $XDG_CONFIG_PATH or $HOME"
     );
 }
@@ -97,8 +99,8 @@ fn nonexistant_config_file() {
 
     let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
     let expected_error_text = format!(
-        "Could not find config file at provided path: {:?}",
+        "Could not find file at 'config-path': {:?}",
         not_real_file_path
     );
-    assert_eq!(app_config, expected_error_text);
+    assert_eq!(app_config.to_string(), expected_error_text);
 }

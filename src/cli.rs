@@ -3,8 +3,21 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 use crate::util::EnvVar;
+
+#[derive(Debug, Error)]
+pub enum CliError {
+    #[error("{clap_error}")]
+    BadInput { clap_error: String },
+
+    #[error("Could not find file at 'config-path': {path:?}")]
+    NoConfigAtProvidedPath { path: OsString },
+
+    #[error("Could not find config file in $XDG_CONFIG_PATH or $HOME")]
+    NoConfigInStandardLocation,
+}
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -20,30 +33,37 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new<I, T>(args: I, env_vars: &EnvVar) -> Result<AppConfig, String>
+    pub fn new<I, T>(args: I, env_vars: &EnvVar) -> Result<AppConfig, CliError>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
         let cli = match Cli::try_parse_from(args) {
             Ok(v) => v,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => {
+                return Err(CliError::BadInput {
+                    clap_error: e.to_string(),
+                })
+            }
         };
+
         Ok(AppConfig {
             config_path: Self::set_config_path(cli.config_path, env_vars)?,
             env_name: cli.env_name,
         })
     }
 
-    fn set_config_path(config_path: Option<PathBuf>, env_vars: &EnvVar) -> Result<PathBuf, String> {
+    fn set_config_path(
+        config_path: Option<PathBuf>,
+        env_vars: &EnvVar,
+    ) -> Result<PathBuf, CliError> {
         if let Some(path) = config_path {
             return if path.exists() {
                 Ok(path)
             } else {
-                Err(format!(
-                    "Could not find config file at provided path: {:?}",
-                    path.as_os_str()
-                ))
+                Err(CliError::NoConfigAtProvidedPath {
+                    path: path.as_os_str().into(),
+                })
             };
         }
 
@@ -67,6 +87,6 @@ impl AppConfig {
             }
         }
 
-        Err("Could not find config file in $XDG_CONFIG_PATH or $HOME".to_string())
+        Err(CliError::NoConfigInStandardLocation)
     }
 }

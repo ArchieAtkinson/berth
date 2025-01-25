@@ -1,6 +1,6 @@
 use crate::presets::Env;
 use log::info;
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
@@ -71,7 +71,7 @@ impl Docker {
         let filter = format!("name={}", &self.env.name);
         let ls_args = vec!["container", "ls", "-a", "--quiet", "--filter", &filter];
 
-        let ls_output = Command::new("docker").args(&ls_args).output().unwrap();
+        let ls_output = Self::run_docker_command_with_output(ls_args)?;
 
         if ls_output.stdout.is_empty() {
             return Ok(());
@@ -81,7 +81,7 @@ impl Docker {
         Self::run_docker_command(rm_args)
     }
 
-    fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
+    fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output, DockerError> {
         let container_engine_command = "docker";
         let output = Command::new(container_engine_command)
             .args(&args)
@@ -108,7 +108,11 @@ impl Docker {
                 return Err(err);
             }
         }
-        Ok(())
+        Ok(output)
+    }
+
+    fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
+        Self::run_docker_command_with_output(args).map(|_| ())
     }
 
     pub fn stop_container(&self) -> Result<(), DockerError> {
@@ -116,9 +120,7 @@ impl Docker {
     }
 }
 
-pub fn enter(name: &str, envs: Vec<Env>) -> Result<(), DockerError> {
-    let env = envs.into_iter().find(|e| e.name == name).unwrap();
-
+pub fn enter(env: Env) -> Result<(), DockerError> {
     let docker = Docker::new(env);
 
     docker.setup_new_container()?;

@@ -13,7 +13,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
         .encoder(Box::new(PatternEncoder::new(
             "{d(%H:%M:%S%.3f)} - {l} - {m}\n",
         )))
-        .build("log/output.log")?;
+        .build("/tmp/berth.log")?;
 
     let config = Config::builder()
         .appender(Appender::builder().build("file", Box::new(file)))
@@ -43,17 +43,23 @@ fn main() {
         }
     };
 
-    info!("Using config file at {:?}", app_config.config_path);
+    println!("Using config file at {:?}", app_config.config_path);
 
     let config_content = std::fs::read_to_string(app_config.config_path).unwrap();
-    let preset = Preset::new(&config_content).unwrap();
+    let mut preset = Preset::new(&config_content).unwrap();
 
-    if preset.env.is_empty() {
-        eprintln!("No environments configured!");
-        return;
-    }
+    let env = match preset.env.remove(&app_config.env_name) {
+        Some(e) => e,
+        None => {
+            eprintln!(
+                "Enviroment name '{}' not found in config",
+                app_config.env_name
+            );
+            exit(1);
+        }
+    };
 
-    docker::enter(&app_config.env_name, preset.env).unwrap();
+    docker::enter(env).unwrap();
 
     info!("Done!");
 
