@@ -20,16 +20,24 @@ pub enum CliError {
 }
 
 #[derive(Parser, Debug)]
+#[command(about = "A simple CLI for managing containerised development environments")]
 struct Cli {
+    /// Path to config file
     #[arg(long, value_name = "FILE")]
     pub config_path: Option<PathBuf>,
 
+    /// Deletes container on exit, useful for testing
+    #[arg(long, default_value_t = false)]
+    pub cleanup: bool,
+
+    /// The enviroment from your config file to start
     pub env_name: String,
 }
 
 pub struct AppConfig {
     pub config_path: PathBuf,
     pub env_name: String,
+    pub cleanup: bool,
 }
 
 impl AppConfig {
@@ -50,6 +58,7 @@ impl AppConfig {
         Ok(AppConfig {
             config_path: Self::set_config_path(cli.config_path, env_vars)?,
             env_name: cli.env_name,
+            cleanup: cli.cleanup,
         })
     }
 

@@ -30,7 +30,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn find_enviroment_in_config(preset: &mut Preset, name: &str) -> Result<Env, AppError> {
+fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, AppError> {
     match preset.env.remove(name) {
         Some(e) => Ok(e),
         None => Err(AppError::ProvidedEnvNameNotInConfig {
@@ -49,14 +49,22 @@ fn run() -> Result<(), AppError> {
     let config_content = std::fs::read_to_string(app_config.config_path).unwrap();
     let mut preset = Preset::new(&config_content)?;
 
-    let env = find_enviroment_in_config(&mut preset, &app_config.env_name)?;
+    let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
 
     let docker = Docker::new(env);
-    if !docker.does_enviroment_exist()? {
-        docker.create_new_enviroment()?;
+    if !docker.does_environment_exist()? {
+        docker.create_new_environment()?;
+    } else {
+        docker.start_container()?;
     }
 
-    Ok(docker.enter_enviroment()?)
+    docker.enter_environment()?;
+
+    if app_config.cleanup {
+        docker.delete_container_if_exists()?;
+    }
+
+    Ok(())
 }
 
 fn main() {

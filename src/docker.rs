@@ -2,6 +2,7 @@ use crate::presets::Env;
 use log::info;
 use std::{
     env,
+    hash::{DefaultHasher, Hash, Hasher},
     process::{Command, Output},
 };
 
@@ -14,7 +15,7 @@ pub enum DockerError {
     CommandKilled { cmd: String },
 }
 
-pub const ENVIROMENT_PREFIX: &str = "berth-";
+const ENVIRONMENT_PREFIX: &str = "berth-";
 
 pub struct Docker {
     env: Env,
@@ -22,7 +23,15 @@ pub struct Docker {
 
 impl Docker {
     pub fn new(mut env: Env) -> Self {
-        env.name = format!("{}{}", ENVIROMENT_PREFIX, env.name);
+        let mut hasher = DefaultHasher::new();
+        env.hash(&mut hasher);
+        env.name = format!(
+            "{}{}-{:016x}",
+            ENVIRONMENT_PREFIX,
+            env.name,
+            hasher.finish()
+        );
+
         if env.mount_working_dir {
             let local_working_dir = env::current_dir().unwrap();
             let env_working_dir = format!(
@@ -39,18 +48,21 @@ impl Docker {
                 .get_or_insert_with(Vec::new)
                 .push(working_dir_mount);
             env.entry_dir = Some(env_working_dir.to_string());
+            let mut hasher = DefaultHasher::new();
+            local_working_dir.hash(&mut hasher);
+            env.name = format!("{}-{:016x}", env.name, hasher.finish());
         }
         Docker { env }
     }
 
-    pub fn create_new_enviroment(&self) -> Result<(), DockerError> {
+    pub fn create_new_environment(&self) -> Result<(), DockerError> {
         self.delete_container_if_exists()?;
         self.create_container()?;
         self.start_container()?;
         self.exec_setup_commands()
     }
 
-    pub fn enter_enviroment(&self) -> Result<(), DockerError> {
+    pub fn enter_environment(&self) -> Result<(), DockerError> {
         let mut enter_args = vec!["exec", "-it"];
 
         if let Some(user) = &self.env.user {
@@ -70,13 +82,26 @@ impl Docker {
         self.stop_container()
     }
 
-    pub fn does_enviroment_exist(&self) -> Result<bool, DockerError> {
+    pub fn does_environment_exist(&self) -> Result<bool, DockerError> {
         let filter = format!("name={}", &self.env.name);
         let ls_args = vec!["container", "ls", "-a", "--quiet", "--filter", &filter];
 
         let ls_output = Self::run_docker_command_with_output(ls_args)?;
 
         Ok(!ls_output.stdout.is_empty())
+    }
+
+    pub fn delete_container_if_exists(&self) -> Result<(), DockerError> {
+        if self.does_environment_exist()? {
+            let rm_args = vec!["container", "rm", &self.env.name];
+            Self::run_docker_command(rm_args)?;
+        }
+        Ok(())
+    }
+
+    pub fn start_container(&self) -> Result<(), DockerError> {
+        let start_args = vec!["start", &self.env.name];
+        Self::run_docker_command(start_args)
     }
 
     fn create_container(&self) -> Result<(), DockerError> {
@@ -90,11 +115,6 @@ impl Docker {
         Self::run_docker_command(create_args)
     }
 
-    fn start_container(&self) -> Result<(), DockerError> {
-        let start_args = vec!["start", &self.env.name];
-        Self::run_docker_command(start_args)
-    }
-
     fn exec_setup_commands(&self) -> Result<(), DockerError> {
         if let Some(cmds) = &self.env.exec_cmds {
             for cmd in cmds {
@@ -103,14 +123,6 @@ impl Docker {
                 let exec_args = exec_args.iter().map(|s| s.as_str()).collect();
                 Self::run_docker_command(exec_args)?;
             }
-        }
-        Ok(())
-    }
-
-    fn delete_container_if_exists(&self) -> Result<(), DockerError> {
-        if self.does_enviroment_exist()? {
-            let rm_args = vec!["container", "rm", &self.env.name];
-            Self::run_docker_command(rm_args)?;
         }
         Ok(())
     }

@@ -28,7 +28,12 @@ fn mount() {
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
         ))
-        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .args(vec![
+            "--cleanup",
+            "--config-path",
+            "{config_path}",
+            "{name}",
+        ])
         .run(Some(5000))
         .expect_substring("/ #")
         .send_line(&format!(
@@ -53,7 +58,12 @@ fn exec_cmds() {
             init_cmd = "/bin/ash"    
             "#
         ))
-        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .args(vec![
+            "--cleanup",
+            "--config-path",
+            "{config_path}",
+            "{name}",
+        ])
         .run(Some(5000))
         .expect_substring("/ #")
         .send_line("which hx")
@@ -88,7 +98,12 @@ fn mount_working_dir() {
             "#,
         ))
         .working_dir(tmp_dir.path().to_str().unwrap())
-        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .args(vec![
+            "--cleanup",
+            "--config-path",
+            "{config_path}",
+            "{name}",
+        ])
         .run(Some(5000))
         .expect_substring(&format!("{} #", container_mount_dir))
         .send_line(&format!("cat {}", mounted_file_name))

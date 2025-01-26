@@ -1,13 +1,9 @@
-use berth::docker;
 use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
     session::{spawn_command, PtySession},
 };
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::{io::Write, process::Command};
 use tempfile::NamedTempFile;
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
@@ -24,7 +20,7 @@ impl Test {
     pub fn new() -> Self {
         Self {
             config_file: NamedTempFile::new().unwrap(),
-            name: Self::generate_random_enviroment_name(),
+            name: Self::generate_random_environment_name(),
             process: None,
             args: Vec::new(),
             working_dir: None,
@@ -114,11 +110,11 @@ impl Test {
 }
 
 impl Test {
-    fn generate_random_enviroment_name() -> String {
-        const LENGTH: usize = 63; // Reported max size
+    fn generate_random_environment_name() -> String {
+        const LENGTH: usize = 32;
         let mut rng = thread_rng();
 
-        // Enviroment containers already have a prefix
+        // Environment containers already have a prefix
         // this extra one is to show its used in testing
         let first_chars: &str = "test-";
 
@@ -126,11 +122,11 @@ impl Test {
         let other_chars: Vec<char> = (b'a'..=b'z')
             .chain(b'A'..=b'Z')
             .chain(b'0'..=b'9')
-            .chain(vec![b'_', b'.', b'-'])
+            .chain(vec![b'_', b'.'])
             .map(char::from)
             .collect();
 
-        let rest: String = (0..LENGTH - first_chars.len() - docker::ENVIROMENT_PREFIX.len())
+        let rest: String = (0..LENGTH)
             .map(|_| other_chars[rng.gen_range(0..other_chars.len())])
             .collect();
 
@@ -143,18 +139,5 @@ impl Test {
 
     fn name(&self) -> &str {
         &self.name
-    }
-}
-
-impl Drop for Test {
-    fn drop(&mut self) {
-        let actual_container_name = format!("{}{}", docker::ENVIROMENT_PREFIX, self.name);
-
-        Command::new("docker")
-            .args(["rm", "-f", &actual_container_name])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .ok();
     }
 }

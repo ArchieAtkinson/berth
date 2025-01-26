@@ -9,7 +9,7 @@ pub enum PresetError {
     TomlParse { message: String },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Hash)]
 #[serde(deny_unknown_fields)]
 pub struct Env {
     #[serde(skip_deserializing)]
