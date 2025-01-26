@@ -1,5 +1,7 @@
 use std::process::exit;
 
+use berth::errors::AppError;
+use berth::presets::Env;
 use berth::util::EnvVar;
 use berth::{cli::AppConfig, docker, presets::Preset};
 
@@ -28,38 +30,42 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn find_enviroment_in_config(preset: &mut Preset, name: &str) -> Result<Env, AppError> {
+    match preset.env.remove(name) {
+        Some(e) => Ok(e),
+        None => Err(AppError::ProvidedEnvNameNotInConfig {
+            name: name.to_string(),
+        }),
+    }
+}
+
+fn run() -> Result<(), AppError> {
+    let args = std::env::args_os();
+    let env_vars = EnvVar::new(std::env::vars());
+    let app_config = AppConfig::new(args, &env_vars)?;
+
+    println!("Using config file at {:?}", app_config.config_path);
+
+    let config_content = std::fs::read_to_string(app_config.config_path).unwrap();
+    let mut preset = Preset::new(&config_content)?;
+
+    let env = find_enviroment_in_config(&mut preset, &app_config.env_name)?;
+
+    Ok(docker::enter(env)?)
+}
+
 fn main() {
     init_logger().unwrap();
 
     info!("Start up");
 
-    let args = std::env::args_os();
-    let env_vars = EnvVar::new(std::env::vars());
-    let app_config = match AppConfig::new(args, &env_vars) {
-        Ok(v) => v,
+    match run() {
+        Ok(()) => (),
         Err(e) => {
             eprintln!("{}", e);
             exit(1);
         }
-    };
-
-    println!("Using config file at {:?}", app_config.config_path);
-
-    let config_content = std::fs::read_to_string(app_config.config_path).unwrap();
-    let mut preset = Preset::new(&config_content).unwrap();
-
-    let env = match preset.env.remove(&app_config.env_name) {
-        Some(e) => e,
-        None => {
-            eprintln!(
-                "Enviroment name '{}' not found in config",
-                app_config.env_name
-            );
-            exit(1);
-        }
-    };
-
-    docker::enter(env).unwrap();
+    }
 
     info!("Done!");
 

@@ -29,10 +29,6 @@ impl Docker {
     fn create_container(&self) -> Result<(), DockerError> {
         let mut create_args = vec!["create", "-it", "--name", &self.env.name];
 
-        if let Some(user) = &self.env.user {
-            create_args.extend_from_slice(&["-u", user]);
-        }
-
         for mount in self.env.mounts.iter().flatten() {
             create_args.extend_from_slice(&["-v", &mount]);
         }
@@ -59,10 +55,17 @@ impl Docker {
     }
 
     pub fn enter_container(&self) -> Result<(), DockerError> {
-        let args = vec!["exec", "-it", &self.env.name, &self.env.init_cmd];
-        Command::new("docker").args(&args).status().unwrap();
+        let mut enter_args = vec!["exec", "-it"];
 
-        info!("docker {:?}", args);
+        if let Some(user) = &self.env.user {
+            enter_args.extend_from_slice(&["-u", user]);
+        }
+
+        enter_args.extend_from_slice(&[&self.env.name, &self.env.init_cmd]);
+
+        Command::new("docker").args(&enter_args).status().unwrap();
+
+        info!("docker {:?}", &enter_args);
 
         Ok(())
     }

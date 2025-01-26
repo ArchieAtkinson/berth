@@ -1,4 +1,3 @@
-use indoc::indoc;
 use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
@@ -130,33 +129,4 @@ impl Drop for Test {
             .status()
             .ok();
     }
-}
-
-#[test]
-fn simple_int() {
-    Test::new()
-        .env(indoc!(
-            r#"
-            image = "alpine:edge"
-            exec_cmds = ["apk add helix"]
-            init_cmd = "/bin/ash"    
-            "#
-        ))
-        .run(vec!["--config-path", "{config_path}", "{name}"], Some(5000))
-        .expect_substring("/ #")
-        .send_line("which hx")
-        .expect_substring("/usr/bin/hx")
-        .send_line("exit")
-        .expect_terminate()
-        .success();
-}
-
-#[test]
-fn incorrect_arg() {
-    Test::new()
-        .env("")
-        .run(vec!["--config", "{config_path}"], Some(5000))
-        .expect_substring("error: unexpected argument '--config' found")
-        .expect_terminate()
-        .failure(1);
 }

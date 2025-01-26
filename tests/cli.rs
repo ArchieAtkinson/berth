@@ -4,6 +4,7 @@ use std::{
 };
 
 use berth::{cli::AppConfig, util::EnvVar};
+use indoc::indoc;
 use tempfile::{NamedTempFile, TempDir};
 
 type EnvVarPairs = Vec<(String, String)>;
@@ -103,4 +104,25 @@ fn nonexistant_config_file() {
         not_real_file_path
     );
     assert_eq!(app_config.to_string(), expected_error_text);
+}
+
+#[test]
+fn incorrect_option_command() {
+    let args = vec!["berth", "--bad-command"];
+
+    let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
+    assert_eq!(
+        app_config.to_string(),
+        indoc!(
+            r#"
+        error: unexpected argument '--bad-command' found
+
+          tip: to pass '--bad-command' as a value, use '-- --bad-command'
+
+        Usage: berth [OPTIONS] <ENV_NAME>
+
+        For more information, try '--help'.
+        "#
+        )
+    );
 }
