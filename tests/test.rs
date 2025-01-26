@@ -1,10 +1,10 @@
+use berth::docker;
 use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
     session::{spawn_command, PtySession},
 };
 use std::{
-    collections::HashMap,
     io::Write,
     process::{Command, Stdio},
 };
@@ -16,14 +16,18 @@ pub struct Test {
     config_file: NamedTempFile,
     name: String,
     process: Option<PtySession>,
+    args: Vec<String>,
+    working_dir: Option<String>,
 }
 
 impl Test {
     pub fn new() -> Self {
         Self {
             config_file: NamedTempFile::new().unwrap(),
-            name: Self::generate_random_container_name(),
+            name: Self::generate_random_enviroment_name(),
             process: None,
+            args: Vec::new(),
+            working_dir: None,
         }
     }
 
@@ -32,22 +36,42 @@ impl Test {
         self
     }
 
-    pub fn run(&mut self, args: Vec<&str>, timeout_ms: Option<u64>) -> &mut Self {
+    pub fn args(&mut self, args: Vec<&str>) -> &mut Self {
+        self.args = args
+            .into_iter()
+            .map(|s| {
+                match s {
+                    "{name}" => self.name(),
+                    "{config_path}" => self.config_path(),
+                    _ => s,
+                }
+                .to_string()
+            })
+            .collect();
+        self
+    }
+
+    fn get_args(&self) -> Vec<&str> {
+        self.args.iter().map(|s| s.as_str()).collect()
+    }
+
+    pub fn working_dir(&mut self, working_dir: &str) -> &mut Self {
+        self.working_dir = Some(working_dir.to_string());
+        self
+    }
+
+    pub fn run(&mut self, timeout_ms: Option<u64>) -> &mut Self {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
         let mut command = Command::new(bin_path);
 
-        let replacements: HashMap<&str, &str> = HashMap::from([
-            ("{name}", self.name()),
-            ("{config_path}", self.config_path()),
-        ]);
+        if !self.get_args().is_empty() {
+            command.args(self.get_args());
+        }
 
-        let result: Vec<&str> = args
-            .iter()
-            .copied()
-            .map(|s| *replacements.get(s).unwrap_or(&s))
-            .collect();
+        if self.working_dir.is_some() {
+            command.current_dir(self.working_dir.clone().unwrap());
+        }
 
-        command.args(result);
         self.process = Some(spawn_command(command, timeout_ms).unwrap());
         self
     }
@@ -90,11 +114,13 @@ impl Test {
 }
 
 impl Test {
-    fn generate_random_container_name() -> String {
-        const LENGTH: usize = 63;
+    fn generate_random_enviroment_name() -> String {
+        const LENGTH: usize = 63; // Reported max size
         let mut rng = thread_rng();
 
-        let first_chars: &str = "dh-test-";
+        // Enviroment containers already have a prefix
+        // this extra one is to show its used in testing
+        let first_chars: &str = "test-";
 
         // Characters for the rest of the positions [a-zA-Z0-9_.-]
         let other_chars: Vec<char> = (b'a'..=b'z')
@@ -104,7 +130,7 @@ impl Test {
             .map(char::from)
             .collect();
 
-        let rest: String = (0..LENGTH - first_chars.len())
+        let rest: String = (0..LENGTH - first_chars.len() - docker::ENVIROMENT_PREFIX.len())
             .map(|_| other_chars[rng.gen_range(0..other_chars.len())])
             .collect();
 
@@ -122,8 +148,10 @@ impl Test {
 
 impl Drop for Test {
     fn drop(&mut self) {
+        let actual_container_name = format!("{}{}", docker::ENVIROMENT_PREFIX, self.name);
+
         Command::new("docker")
-            .args(["rm", "-f", self.name()])
+            .args(["rm", "-f", &actual_container_name])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()

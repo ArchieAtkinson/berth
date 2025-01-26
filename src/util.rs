@@ -1,25 +1,23 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, env};
 
 #[derive(Debug)]
-pub struct EnvVar {
-    pub home: Option<PathBuf>,
-    pub xdg_config_path: Option<PathBuf>,
+pub struct AppEnvVar {
+    vars: HashMap<String, String>,
 }
 
-impl EnvVar {
-    pub fn new<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = (String, String)>,
-    {
-        let vars: HashMap<_, _> = iter.into_iter().collect();
-
-        EnvVar {
-            home: Self::get_path(&vars, "HOME"),
-            xdg_config_path: Self::get_path(&vars, "XDG_CONFIG_PATH"),
+impl AppEnvVar {
+    pub fn new() -> Self {
+        AppEnvVar {
+            vars: env::vars().into_iter().collect(),
         }
     }
 
-    fn get_path(vars: &HashMap<String, String>, key: &str) -> Option<PathBuf> {
-        vars.get(key).map(PathBuf::from)
+    pub fn set_var(mut self, var: &str, value: &str) -> Self {
+        self.vars.insert(var.to_string(), value.to_string());
+        self
+    }
+
+    pub fn var(&self, var: &str) -> Option<&str> {
+        self.vars.get(var).map(|v| v.as_str())
     }
 }

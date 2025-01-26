@@ -28,7 +28,8 @@ fn mount() {
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
         ))
-        .run(vec!["--config-path", "{config_path}", "{name}"], Some(5000))
+        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .run(Some(5000))
         .expect_substring("/ #")
         .send_line(&format!(
             "cat {}/{}",
@@ -52,11 +53,49 @@ fn exec_cmds() {
             init_cmd = "/bin/ash"    
             "#
         ))
-        .run(vec!["--config-path", "{config_path}", "{name}"], Some(5000))
+        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .run(Some(5000))
         .expect_substring("/ #")
         .send_line("which hx")
         .expect_substring("/usr/bin/hx")
         .send_line("exit")
         .expect_terminate()
         .success();
+}
+
+#[test]
+fn mount_working_dir() {
+    let tmp_dir = TempDir::new().unwrap();
+
+    let mounted_file_name = "test.txt";
+    let file_path = tmp_dir.path().join(mounted_file_name);
+
+    let mut tmp_file = File::create(file_path).unwrap();
+    let file_text = "Hello World";
+    writeln!(tmp_file, "{}", file_text).unwrap();
+
+    let container_mount_dir = format!(
+        "/berth/{}",
+        tmp_dir.path().file_name().unwrap().to_str().unwrap()
+    );
+
+    Test::new()
+        .env(&formatdoc!(
+            r#"
+            image = "alpine:edge"
+            init_cmd = "/bin/ash"
+            mount_working_dir = true
+            "#,
+        ))
+        .working_dir(tmp_dir.path().to_str().unwrap())
+        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .run(Some(5000))
+        .expect_substring(&format!("{} #", container_mount_dir))
+        .send_line(&format!("cat {}", mounted_file_name))
+        .expect_substring(file_text)
+        .send_line("exit")
+        .expect_terminate()
+        .success();
+
+    tmp_dir.close().unwrap();
 }

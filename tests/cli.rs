@@ -3,21 +3,15 @@ use std::{
     path::PathBuf,
 };
 
-use berth::{cli::AppConfig, util::EnvVar};
+use berth::{cli::AppConfig, util::AppEnvVar};
 use indoc::indoc;
 use tempfile::{NamedTempFile, TempDir};
-
-type EnvVarPairs = Vec<(String, String)>;
-
-fn empty_env_vars() -> EnvVar {
-    EnvVar::new(EnvVarPairs::new())
-}
 
 #[test]
 fn no_commands() {
     let args = vec!["berth"];
 
-    let app_config = AppConfig::new(args, &empty_env_vars());
+    let app_config = AppConfig::new(args, &AppEnvVar::new());
     assert!(app_config.is_err());
 
     let err = app_config.err().unwrap();
@@ -37,10 +31,8 @@ fn env_name_with_config_in_xdg_config_path() {
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
     File::create(&file_path).unwrap();
 
-    let fake_env_vars = EnvVar::new(EnvVarPairs::from([(
-        "XDG_CONFIG_PATH".to_string(),
-        tmp_dir.path().display().to_string(),
-    )]));
+    let fake_env_vars =
+        AppEnvVar::new().set_var("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap());
 
     let args = vec!["berth", "Name"];
 
@@ -59,10 +51,7 @@ fn env_name_with_config_in_home_path() {
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
     File::create(&file_path).unwrap();
 
-    let fake_env_vars = EnvVar::new(EnvVarPairs::from([(
-        "HOME".to_string(),
-        tmp_dir.path().display().to_string(),
-    )]));
+    let fake_env_vars = AppEnvVar::new().set_var("HOME", tmp_dir.path().to_str().unwrap());
 
     let args = vec!["berth", "Name"];
 
@@ -74,7 +63,10 @@ fn env_name_with_config_in_home_path() {
 fn env_name_with_no_config_in_env() {
     let args = vec!["berth", "Name"];
 
-    let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
+    let empty_env_var = AppEnvVar::new()
+        .set_var("HOME", "")
+        .set_var("XDG_CONFIG_PATH", "");
+    let app_config = AppConfig::new(args, &empty_env_var).err().unwrap();
     assert_eq!(
         app_config.to_string(),
         "Could not find config file in $XDG_CONFIG_PATH or $HOME"
@@ -87,7 +79,7 @@ fn vaild_config_file() {
     let config_file_path = config_file.path().to_str().unwrap();
     let args = vec!["berth", "--config-path", config_file_path, "Name"];
 
-    let app_config = AppConfig::new(args, &empty_env_vars()).unwrap();
+    let app_config = AppConfig::new(args, &AppEnvVar::new()).unwrap();
     assert_eq!(app_config.env_name, "Name");
     assert_eq!(app_config.config_path.to_str(), Some(config_file_path))
 }
@@ -98,7 +90,7 @@ fn nonexistant_config_file() {
     let not_real_file_path = not_real_file.as_path().to_str().unwrap();
     let args = vec!["berth", "--config-path", not_real_file_path, "Name"];
 
-    let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
+    let app_config = AppConfig::new(args, &AppEnvVar::new()).err().unwrap();
     let expected_error_text = format!(
         "Could not find file at 'config-path': {:?}",
         not_real_file_path
@@ -110,7 +102,7 @@ fn nonexistant_config_file() {
 fn incorrect_option_command() {
     let args = vec!["berth", "--bad-command"];
 
-    let app_config = AppConfig::new(args, &empty_env_vars()).err().unwrap();
+    let app_config = AppConfig::new(args, &AppEnvVar::new()).err().unwrap();
     assert_eq!(
         app_config.to_string(),
         indoc!(

@@ -5,7 +5,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::util::EnvVar;
+use crate::util::AppEnvVar;
 
 #[derive(Debug, Error)]
 pub enum CliError {
@@ -33,7 +33,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new<I, T>(args: I, env_vars: &EnvVar) -> Result<AppConfig, CliError>
+    pub fn new<I, T>(args: I, env_vars: &AppEnvVar) -> Result<AppConfig, CliError>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
@@ -55,7 +55,7 @@ impl AppConfig {
 
     fn set_config_path(
         config_path: Option<PathBuf>,
-        env_vars: &EnvVar,
+        env_vars: &AppEnvVar,
     ) -> Result<PathBuf, CliError> {
         if let Some(path) = config_path {
             return if path.exists() {
@@ -67,7 +67,7 @@ impl AppConfig {
             };
         }
 
-        if let Some(xdg_config) = &env_vars.xdg_config_path {
+        if let Some(xdg_config) = env_vars.var("XDG_CONFIG_PATH") {
             let xdg_path = Path::new(&xdg_config)
                 .join(".config")
                 .join("berth")
@@ -77,7 +77,7 @@ impl AppConfig {
             }
         }
 
-        if let Some(home) = &env_vars.home {
+        if let Some(home) = env_vars.var("HOME") {
             let home_path = Path::new(&home)
                 .join(".config")
                 .join("berth")
