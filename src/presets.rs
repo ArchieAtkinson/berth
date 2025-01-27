@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use envmnt::{ExpandOptions, ExpansionType};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -29,25 +30,39 @@ pub struct Env {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preset {
-    pub env: HashMap<String, Env>,
+    #[serde(rename = "env")]
+    pub envs: HashMap<String, Env>,
 }
 
 impl Preset {
     pub fn new(file: &str) -> Result<Preset, PresetError> {
         match toml::from_str::<Preset>(file) {
             Ok(v) => Ok(Preset {
-                env: v
-                    .env
-                    .into_iter()
-                    .map(|(key, mut env)| {
-                        env.name = key.clone();
-                        (key, env)
-                    })
-                    .collect(),
+                envs: Self::parse_envs(v.envs),
             }),
             Err(e) => Err(PresetError::TomlParse {
                 message: e.to_string(),
             }),
         }
+    }
+    fn parse_envs(envs: HashMap<String, Env>) -> HashMap<String, Env> {
+        envs.into_iter()
+            .map(|(name, mut env)| {
+                env.name = name.clone();
+                env.mounts = env.mounts.map(|mounts| Self::expand_mounts(mounts));
+
+                (name, env)
+            })
+            .collect()
+    }
+
+    fn expand_mounts(mounts: Vec<String>) -> Vec<String> {
+        let mut options = ExpandOptions::new();
+        options.expansion_type = Some(ExpansionType::Unix);
+
+        mounts
+            .into_iter()
+            .map(|mount| envmnt::expand(&mount, Some(options)).to_string())
+            .collect()
     }
 }

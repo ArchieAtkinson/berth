@@ -30,7 +30,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, AppError> {
-    match preset.env.remove(name) {
+    match preset.envs.remove(name) {
         Some(e) => Ok(e),
         None => Err(AppError::ProvidedEnvNameNotInConfig {
             name: name.to_string(),

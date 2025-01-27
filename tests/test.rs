@@ -4,11 +4,54 @@ use rexpect::{
     session::{spawn_command, PtySession},
 };
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
 use tempfile::NamedTempFile;
+
+pub struct TmpEnvVar {
+    name: String,
+    value: String,
+}
+
+impl TmpEnvVar {
+    pub fn new(value: &str) -> TmpEnvVar {
+        let name = Self::generate_env_var_name();
+        env::set_var(name.clone(), value);
+        assert_ne!(&name, value);
+
+        TmpEnvVar {
+            name,
+            value: value.to_string(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    fn generate_env_var_name() -> String {
+        const LENGTH: usize = 32;
+        let mut rng = thread_rng();
+
+        let chars: Vec<char> = (b'a'..=b'z').chain(b'A'..=b'Z').map(char::from).collect();
+
+        (0..LENGTH)
+            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .collect()
+    }
+}
+
+impl Drop for TmpEnvVar {
+    fn drop(&mut self) {
+        env::remove_var(&self.name)
+    }
+}
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
