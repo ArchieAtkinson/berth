@@ -84,28 +84,28 @@ fn mount_working_dir() {
     let file_text = "Hello World";
     writeln!(tmp_file, "{}", file_text).unwrap();
 
-    let container_mount_dir = format!(
-        "/berth/{}",
-        tmp_dir.path().file_name().unwrap().to_str().unwrap()
-    );
+    let container_mount_dir = "/berth";
 
     Test::new()
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
             init_cmd = "/bin/ash"
-            mount_working_dir = true
+            mounts = ["$PWD:{0}"]
+            entry_dir = "{0}"
             "#,
+            container_mount_dir,
         ))
-        .working_dir(tmp_dir.path().to_str().unwrap())
+        .envs(vec![("PWD", tmp_dir.path().to_str().unwrap())])
         .args(vec![
             "--cleanup",
             "--config-path",
             "{config_path}",
             "{name}",
         ])
-        .run(Some(5000))
+        .run(Some(2500))
         .expect_substring(&format!("{} #", container_mount_dir))
+        .send_line("pwd && ls")
         .send_line(&format!("cat {}", mounted_file_name))
         .expect_substring(file_text)
         .send_line("exit")

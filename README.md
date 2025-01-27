@@ -38,12 +38,7 @@ Each environment is defined in a `env` subtable, with the name used to the refer
 
 ### Mounting Working Directories
 
-If `mount_working_dir` is set to be true, the first time the environment is created the current working directory is mounted to `/berth/<current_dir_name>` in the container. If you exit and reenter the container from the same directory the container will be reused. 
-
-If you use a different directory, that directory will be mounted. Both containers will still be available for use. 
-
-
-TODO: Work out who to support the current setup and for user to provide where to mount to in the container
+Use can use $PWD to mount you working directory
 
 ````
     pub image: String,
@@ -53,20 +48,19 @@ TODO: Work out who to support the current setup and for user to provide where to
     pub mounts: Option<Vec<String>>,
     pub user: Option<String>,
     pub entry_dir: Option<String>,
-    pub mount_working_dir: bool,
 ````
 
 
 ### Container Naming
 
-Containers names are split into four, separated by a `-`
-`berth-Test-a667d944e9480d0d-48779eb9beeaba8f`.
+Containers names are split into three, separated by a `-`:
+`berth-Test-a667d944e9480d0d`
 
 The first part is simple, just `berth` to identify it as created by `berth`.
-The second part, which is `Test` in this example, is the name of the environment. This is set in the config file and during use of `berth`.
-The third part is a hash of the configuration used. This allows detecting changes and rebuilding containers if the configuration has changed.
-The last part is only present if the `mount_working_dir` option is set. This is a hash of the local working directory. This allows the same environment be used in multiple locations, each having there local project mounted.
 
+The second part, which is `Test` in this example, is the name of the environment. This is set in the config file and during use of `berth`.
+
+The third part is a hash of the configuration used. This allows detecting changes and rebuilding containers if the configuration has changed. The hash is calculated after any additional parsing such as expansion of environmental variables.
 
 ## Commands?
 

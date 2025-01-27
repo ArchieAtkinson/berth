@@ -1,7 +1,6 @@
 use crate::presets::Env;
 use log::info;
 use std::{
-    env,
     hash::{DefaultHasher, Hash, Hasher},
     process::{Command, Output},
 };
@@ -31,27 +30,6 @@ impl Docker {
             env.name,
             hasher.finish()
         );
-
-        if env.mount_working_dir {
-            let local_working_dir = env::current_dir().unwrap();
-            let env_working_dir = format!(
-                "/berth/{}",
-                local_working_dir.file_name().unwrap().to_str().unwrap()
-            );
-            let working_dir_mount = format!(
-                "{}:{}",
-                local_working_dir.display().to_string(),
-                env_working_dir
-            );
-            info!("Adding mount: {}", &working_dir_mount);
-            env.mounts
-                .get_or_insert_with(Vec::new)
-                .push(working_dir_mount);
-            env.entry_dir = Some(env_working_dir.to_string());
-            let mut hasher = DefaultHasher::new();
-            local_working_dir.hash(&mut hasher);
-            env.name = format!("{}-{:016x}", env.name, hasher.finish());
-        }
         Docker { env }
     }
 

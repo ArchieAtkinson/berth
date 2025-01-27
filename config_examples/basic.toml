@@ -2,5 +2,5 @@
 image = "alpine:edge"
 exec_cmds = ["apk add helix bash"]
 init_cmd = "/bin/ash"
-mounts = ["/home/aa/.config/helix:/root/.config/helix"]
-mount_working_dir = true
+mounts = ["$HOME/.config/helix:/root/.config/helix", "$PWD:/berth"]
+entry_dir = "/berth"

@@ -22,9 +22,6 @@ pub struct Env {
     pub init_cmd: String,
     pub user: Option<String>,
     pub entry_dir: Option<String>,
-
-    #[serde(default)]
-    pub mount_working_dir: bool,
 }
 
 #[derive(Debug, Deserialize)]
