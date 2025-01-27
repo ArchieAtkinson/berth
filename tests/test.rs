@@ -3,32 +3,52 @@ use rexpect::{
     process::wait::WaitStatus,
     session::{spawn_command, PtySession},
 };
-use std::{io::Write, process::Command};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 use tempfile::NamedTempFile;
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
 pub struct Test {
-    config_file: NamedTempFile,
+    config_file: PathBuf,
+    tmp_file: Option<NamedTempFile>,
     name: String,
     process: Option<PtySession>,
     args: Vec<String>,
     working_dir: Option<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl Test {
     pub fn new() -> Self {
         Self {
-            config_file: NamedTempFile::new().unwrap(),
+            config_file: PathBuf::new(),
+            tmp_file: None,
             name: Self::generate_random_environment_name(),
             process: None,
             args: Vec::new(),
             working_dir: None,
+            envs: Vec::new(),
         }
     }
 
-    pub fn env(&mut self, content: &str) -> &mut Self {
-        write!(self.config_file, "[env.\"{}\"]\n{}", self.name, content).unwrap();
+    pub fn config(&mut self, content: &str) -> &mut Self {
+        self.tmp_file = Some(NamedTempFile::new().unwrap());
+        let path = self.tmp_file.as_ref().unwrap().path().to_owned();
+        self.config_with_path(content, path.as_path());
+        self
+    }
+
+    pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
+        self.config_file.push(path);
+        fs::write(
+            &self.config_file,
+            format!("[env.\"{}\"]\n{}", self.name, content),
+        )
+        .unwrap();
         self
     }
 
@@ -47,8 +67,13 @@ impl Test {
         self
     }
 
-    fn get_args(&self) -> Vec<&str> {
-        self.args.iter().map(|s| s.as_str()).collect()
+    pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> &mut Self {
+        self.envs.extend(
+            envs.iter()
+                .map(|s| (s.0.to_string(), s.1.to_string()))
+                .collect::<Vec<(String, String)>>(),
+        );
+        self
     }
 
     pub fn working_dir(&mut self, working_dir: &str) -> &mut Self {
@@ -68,6 +93,10 @@ impl Test {
             command.current_dir(self.working_dir.clone().unwrap());
         }
 
+        if !self.envs.is_empty() {
+            command.envs(self.envs.clone());
+        }
+
         self.process = Some(spawn_command(command, timeout_ms).unwrap());
         self
     }
@@ -81,7 +110,7 @@ impl Test {
         self.process
             .as_mut()
             .unwrap()
-            .exp_regex(format!(".*?{}.*?", expect).as_str())
+            .exp_regex(format!(".*?{}.*?", regex::escape(expect)).as_str())
             .unwrap();
         self
     }
@@ -134,10 +163,14 @@ impl Test {
     }
 
     fn config_path(&self) -> &str {
-        self.config_file.path().to_str().unwrap()
+        self.config_file.to_str().unwrap()
     }
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn get_args(&self) -> Vec<&str> {
+        self.args.iter().map(|s| s.as_str()).collect()
     }
 }

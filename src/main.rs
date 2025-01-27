@@ -2,7 +2,6 @@ use std::process::exit;
 
 use berth::errors::AppError;
 use berth::presets::Env;
-use berth::util::AppEnvVar;
 use berth::{cli::AppConfig, docker::Docker, presets::Preset};
 
 use log::info;
@@ -41,8 +40,7 @@ fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, Ap
 
 fn run() -> Result<(), AppError> {
     let args = std::env::args_os();
-    let env_vars = AppEnvVar::new();
-    let app_config = AppConfig::new(args, &env_vars)?;
+    let app_config = AppConfig::new(args)?;
 
     println!("Using config file at {:?}", app_config.config_path);
 

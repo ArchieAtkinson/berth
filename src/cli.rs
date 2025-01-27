@@ -5,8 +5,6 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::util::AppEnvVar;
-
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error("{clap_error}")]
@@ -41,7 +39,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new<I, T>(args: I, env_vars: &AppEnvVar) -> Result<AppConfig, CliError>
+    pub fn new<I, T>(args: I) -> Result<AppConfig, CliError>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
@@ -56,16 +54,13 @@ impl AppConfig {
         };
 
         Ok(AppConfig {
-            config_path: Self::set_config_path(cli.config_path, env_vars)?,
+            config_path: Self::set_config_path(cli.config_path)?,
             env_name: cli.env_name,
             cleanup: cli.cleanup,
         })
     }
 
-    fn set_config_path(
-        config_path: Option<PathBuf>,
-        env_vars: &AppEnvVar,
-    ) -> Result<PathBuf, CliError> {
+    fn set_config_path(config_path: Option<PathBuf>) -> Result<PathBuf, CliError> {
         if let Some(path) = config_path {
             return if path.exists() {
                 Ok(path)
@@ -76,7 +71,7 @@ impl AppConfig {
             };
         }
 
-        if let Some(xdg_config) = env_vars.var("XDG_CONFIG_PATH") {
+        if let Ok(xdg_config) = std::env::var("XDG_CONFIG_PATH") {
             let xdg_path = Path::new(&xdg_config)
                 .join(".config")
                 .join("berth")
@@ -86,7 +81,7 @@ impl AppConfig {
             }
         }
 
-        if let Some(home) = env_vars.var("HOME") {
+        if let Ok(home) = std::env::var("HOME") {
             let home_path = Path::new(&home)
                 .join(".config")
                 .join("berth")

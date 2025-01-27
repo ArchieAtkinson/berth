@@ -19,7 +19,7 @@ fn mount() {
     let container_mount_dir = "/home/mount";
 
     Test::new()
-        .env(&formatdoc!(
+        .config(&formatdoc!(
             r#"
             image = "alpine:edge"
             init_cmd = "/bin/ash"
@@ -51,7 +51,7 @@ fn mount() {
 #[test]
 fn exec_cmds() {
     Test::new()
-        .env(indoc!(
+        .config(indoc!(
             r#"
             image = "alpine:edge"
             exec_cmds = ["apk add helix"]
@@ -90,7 +90,7 @@ fn mount_working_dir() {
     );
 
     Test::new()
-        .env(&formatdoc!(
+        .config(&formatdoc!(
             r#"
             image = "alpine:edge"
             init_cmd = "/bin/ash"
