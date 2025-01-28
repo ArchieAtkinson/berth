@@ -217,3 +217,24 @@ impl Test {
         self.args.iter().map(|s| s.as_str()).collect()
     }
 }
+
+impl Drop for Test {
+    fn drop(&mut self) {
+        let name_arg = format!("name=berth-{}", self.name());
+        let containers = Command::new("docker")
+            .args(["ps", "-a", "--filter", &name_arg, "--format", "{{.Names}}"])
+            .output()
+            .unwrap();
+        let container = String::from_utf8(containers.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+        if !container.is_empty() {
+            println!("Deleting container: {}", container);
+            Command::new("docker")
+                .args(["rm", "-f", &container])
+                .status()
+                .unwrap();
+        }
+    }
+}
