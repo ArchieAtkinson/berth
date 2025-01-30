@@ -57,7 +57,10 @@ impl Docker {
 
         Command::new("docker").args(&enter_args).status().unwrap();
 
-        self.stop_container()
+        if !self.is_anyone_connected()? {
+            self.stop_container()?;
+        }
+        Ok(())
     }
 
     pub fn does_environment_exist(&self) -> Result<bool, DockerError> {
@@ -139,5 +142,14 @@ impl Docker {
 
     fn stop_container(&self) -> Result<(), DockerError> {
         Self::run_docker_command(vec!["stop", "-t", "0", &self.env.name])
+    }
+
+    fn is_anyone_connected(&self) -> Result<bool, DockerError> {
+        let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
+        let output = Self::run_docker_command_with_output(args)?;
+        let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
+
+        let no_connections_ps_count = 2;
+        Ok(ps_count > no_connections_ps_count)
     }
 }

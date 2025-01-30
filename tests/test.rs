@@ -2,6 +2,7 @@ use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
     session::{spawn_command, PtySession},
+    ReadUntil,
 };
 use std::{
     env, fs,
@@ -153,7 +154,7 @@ impl Test {
         self.process
             .as_mut()
             .unwrap()
-            .exp_regex(format!(".*?{}.*?", regex::escape(expect)).as_str())
+            .exp_any(vec![ReadUntil::String(expect.into())])
             .unwrap();
         self
     }
@@ -179,6 +180,13 @@ impl Test {
             v => panic!("Unexpected Process WaitStatus {:?}", v),
         }
     }
+    pub fn config_path(&self) -> &str {
+        self.config_file.to_str().unwrap()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 impl Test {
@@ -203,14 +211,6 @@ impl Test {
             .collect();
 
         format!("{}{}", first_chars, rest)
-    }
-
-    fn config_path(&self) -> &str {
-        self.config_file.to_str().unwrap()
-    }
-
-    fn name(&self) -> &str {
-        &self.name
     }
 
     fn get_args(&self) -> Vec<&str> {
