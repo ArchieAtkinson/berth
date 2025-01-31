@@ -65,7 +65,7 @@ pub struct TestHarness<S> {
     config_file: PathBuf,
     tmp_file: Option<NamedTempFile>,
     name: String,
-    process: Option<PtySession>,
+    session: Option<PtySession>,
     args: Vec<String>,
     working_dir: Option<String>,
     envs: Vec<(String, String)>,
@@ -79,7 +79,7 @@ impl TestHarness<Configuring> {
             config_file: PathBuf::new(),
             tmp_file: None,
             name: Self::generate_random_environment_name(),
-            process: None,
+            session: None,
             args: Vec::new(),
             working_dir: None,
             envs: Vec::new(),
@@ -95,12 +95,8 @@ impl TestHarness<Configuring> {
     }
 
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
-        self.config_file.push(path);
-        fs::write(
-            &self.config_file,
-            format!("[env.\"{}\"]\n{}", &self.name, content),
-        )
-        .unwrap();
+        fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content)).unwrap();
+        self.config_file = path.to_path_buf();
         self
     }
 
@@ -154,7 +150,7 @@ impl TestHarness<Configuring> {
             config_file: self.config_file.clone(),
             tmp_file: self.tmp_file.take(),
             name: self.name.clone(),
-            process: Some(process),
+            session: Some(process),
             args: self.args.clone(),
             working_dir: self.working_dir.clone(),
             envs: self.envs.clone(),
@@ -166,12 +162,12 @@ impl TestHarness<Configuring> {
 
 impl TestHarness<Running> {
     pub fn send_line(mut self, cmd: &str) -> Self {
-        self.process.as_mut().unwrap().send_line(cmd).unwrap();
+        self.session.as_mut().unwrap().send_line(cmd).unwrap();
         self
     }
 
     pub fn expect_substring(mut self, expect: &str) -> Self {
-        self.process
+        self.session
             .as_mut()
             .unwrap()
             .exp_any(vec![ReadUntil::String(expect.into())])
@@ -180,12 +176,12 @@ impl TestHarness<Running> {
     }
 
     pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
-        self.process.as_mut().unwrap().exp_eof().unwrap();
+        self.session.as_mut().unwrap().exp_eof().unwrap();
         TestHarness {
             config_file: self.config_file.clone(),
             tmp_file: self.tmp_file.take(),
             name: self.name.clone(),
-            process: self.process.take(),
+            session: self.session.take(),
             args: self.args.clone(),
             working_dir: self.working_dir.clone(),
             envs: self.envs.clone(),
@@ -197,7 +193,7 @@ impl TestHarness<Running> {
 
 impl TestHarness<Terminated> {
     pub fn success(mut self) {
-        match self.process.as_mut().unwrap().process.wait().unwrap() {
+        match self.session.as_mut().unwrap().process.wait().unwrap() {
             WaitStatus::Exited(_, 0) => (),
             WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
             v => panic!("Unexpected Process WaitStatus {:?}", v),
@@ -205,7 +201,7 @@ impl TestHarness<Terminated> {
     }
 
     pub fn failure(mut self, expected_code: i32) {
-        match self.process.as_mut().unwrap().process.wait().unwrap() {
+        match self.session.as_mut().unwrap().process.wait().unwrap() {
             WaitStatus::Exited(_, 0) => panic!("Unexpected successful exit"),
             WaitStatus::Exited(_, n) if n == expected_code => (),
             WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
