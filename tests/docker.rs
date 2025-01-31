@@ -3,7 +3,7 @@ use std::{fs::File, io::Write, process::Command};
 use tempfile::TempDir;
 
 pub mod test;
-use crate::test::Test;
+use crate::test::TestHarness;
 
 #[test]
 fn mount() {
@@ -18,7 +18,7 @@ fn mount() {
 
     let container_mount_dir = "/home/mount";
 
-    Test::new()
+    TestHarness::new()
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
@@ -50,7 +50,7 @@ fn mount() {
 
 #[test]
 fn exec_cmds() {
-    Test::new()
+    TestHarness::new()
         .config(indoc!(
             r#"
             image = "alpine:edge"
@@ -86,7 +86,7 @@ fn mount_working_dir() {
 
     let container_mount_dir = "/berth";
 
-    Test::new()
+    TestHarness::new()
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
@@ -117,17 +117,6 @@ fn mount_working_dir() {
 
 #[test]
 fn keep_container_running_if_one_terminal_exits() {
-    let mut t1 = Test::new();
-    t1.config(&formatdoc!(
-        r#"
-            image = "alpine:edge"
-            init_cmd = "/bin/ash"
-            "#,
-    ))
-    .args(vec!["--config-path", "{config_path}", "{name}"])
-    .run(Some(2500))
-    .expect_substring("/ #");
-
     let is_container_running = |name: &str| {
         let name_filter = format!("name={}", name);
         let mut ls_cmd = Command::new("docker");
@@ -144,19 +133,36 @@ fn keep_container_running_if_one_terminal_exits() {
         running_containers.contains(name)
     };
 
-    assert!(is_container_running(&t1.name()));
+    let harness = TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            image = "alpine:edge"
+            init_cmd = "/bin/ash"
+            "#,
+        ))
+        .args(vec!["--config-path", "{config_path}", "{name}"])
+        .run(Some(2500))
+        .expect_substring("/ #");
 
-    Test::new()
-        .args(vec!["--config-path", t1.config_path(), t1.name()])
+    let container_name = harness.name().to_string();
+
+    assert!(is_container_running(&container_name));
+
+    TestHarness::new()
+        .args(vec![
+            "--config-path",
+            harness.config_path(),
+            &container_name,
+        ])
         .run(Some(2500))
         .expect_substring("/ #")
         .send_line("exit")
         .expect_terminate()
         .success();
 
-    assert!(is_container_running(&t1.name()));
+    assert!(is_container_running(&container_name));
 
-    t1.send_line("exit").expect_terminate().success();
+    harness.send_line("exit").expect_terminate().success();
 
-    assert!(!is_container_running(&t1.name()));
+    assert!(!is_container_running(&container_name));
 }

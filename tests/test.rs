@@ -6,6 +6,7 @@ use rexpect::{
 };
 use std::{
     env, fs,
+    marker::PhantomData,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -56,7 +57,11 @@ impl Drop for TmpEnvVar {
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
-pub struct Test {
+pub struct Configuring;
+pub struct Running;
+pub struct Terminated;
+
+pub struct TestHarness<S> {
     config_file: PathBuf,
     tmp_file: Option<NamedTempFile>,
     name: String,
@@ -64,9 +69,11 @@ pub struct Test {
     args: Vec<String>,
     working_dir: Option<String>,
     envs: Vec<(String, String)>,
+    _state: PhantomData<S>,
+    droppable: bool,
 }
 
-impl Test {
+impl TestHarness<Configuring> {
     pub fn new() -> Self {
         Self {
             config_file: PathBuf::new(),
@@ -76,21 +83,22 @@ impl Test {
             args: Vec::new(),
             working_dir: None,
             envs: Vec::new(),
+            _state: PhantomData,
+            droppable: false,
         }
     }
 
     pub fn config(&mut self, content: &str) -> &mut Self {
         self.tmp_file = Some(NamedTempFile::new().unwrap());
-        let path = self.tmp_file.as_ref().unwrap().path().to_owned();
-        self.config_with_path(content, path.as_path());
-        self
+        let path = self.tmp_file.as_ref().unwrap().path().to_path_buf();
+        self.config_with_path(content, &path)
     }
 
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
         self.config_file.push(path);
         fs::write(
             &self.config_file,
-            format!("[env.\"{}\"]\n{}", self.name, content),
+            format!("[env.\"{}\"]\n{}", &self.name, content),
         )
         .unwrap();
         self
@@ -125,7 +133,7 @@ impl Test {
         self
     }
 
-    pub fn run(&mut self, timeout_ms: Option<u64>) -> &mut Self {
+    pub fn run(&mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
         let mut command = Command::new(bin_path);
 
@@ -133,24 +141,36 @@ impl Test {
             command.args(self.get_args());
         }
 
-        if self.working_dir.is_some() {
-            command.current_dir(self.working_dir.clone().unwrap());
+        if let Some(dir) = &self.working_dir {
+            command.current_dir(dir);
         }
 
         if !self.envs.is_empty() {
             command.envs(self.envs.clone());
         }
 
-        self.process = Some(spawn_command(command, timeout_ms).unwrap());
-        self
+        let process = spawn_command(command, timeout_ms).unwrap();
+        TestHarness {
+            config_file: self.config_file.clone(),
+            tmp_file: self.tmp_file.take(),
+            name: self.name.clone(),
+            process: Some(process),
+            args: self.args.clone(),
+            working_dir: self.working_dir.clone(),
+            envs: self.envs.clone(),
+            _state: PhantomData,
+            droppable: true,
+        }
     }
+}
 
-    pub fn send_line(&mut self, cmd: &str) -> &mut Self {
+impl TestHarness<Running> {
+    pub fn send_line(mut self, cmd: &str) -> Self {
         self.process.as_mut().unwrap().send_line(cmd).unwrap();
         self
     }
 
-    pub fn expect_substring(&mut self, expect: &str) -> &mut Self {
+    pub fn expect_substring(mut self, expect: &str) -> Self {
         self.process
             .as_mut()
             .unwrap()
@@ -159,12 +179,24 @@ impl Test {
         self
     }
 
-    pub fn expect_terminate(&mut self) -> &mut Self {
+    pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
         self.process.as_mut().unwrap().exp_eof().unwrap();
-        self
+        TestHarness {
+            config_file: self.config_file.clone(),
+            tmp_file: self.tmp_file.take(),
+            name: self.name.clone(),
+            process: self.process.take(),
+            args: self.args.clone(),
+            working_dir: self.working_dir.clone(),
+            envs: self.envs.clone(),
+            _state: PhantomData,
+            droppable: true,
+        }
     }
+}
 
-    pub fn success(&mut self) {
+impl TestHarness<Terminated> {
+    pub fn success(mut self) {
         match self.process.as_mut().unwrap().process.wait().unwrap() {
             WaitStatus::Exited(_, 0) => (),
             WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
@@ -172,14 +204,17 @@ impl Test {
         }
     }
 
-    pub fn failure(&mut self, expected_code: i32) {
+    pub fn failure(mut self, expected_code: i32) {
         match self.process.as_mut().unwrap().process.wait().unwrap() {
-            WaitStatus::Exited(_, 0) => panic!("Unexpected sucessful exit"),
+            WaitStatus::Exited(_, 0) => panic!("Unexpected successful exit"),
             WaitStatus::Exited(_, n) if n == expected_code => (),
             WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
             v => panic!("Unexpected Process WaitStatus {:?}", v),
         }
     }
+}
+
+impl<S> TestHarness<S> {
     pub fn config_path(&self) -> &str {
         self.config_file.to_str().unwrap()
     }
@@ -187,9 +222,7 @@ impl Test {
     pub fn name(&self) -> &str {
         &self.name
     }
-}
 
-impl Test {
     fn generate_random_environment_name() -> String {
         const LENGTH: usize = 32;
         let mut rng = thread_rng();
@@ -216,9 +249,7 @@ impl Test {
     fn get_args(&self) -> Vec<&str> {
         self.args.iter().map(|s| s.as_str()).collect()
     }
-}
 
-impl Drop for Test {
     fn drop(&mut self) {
         let name_arg = format!("name=berth-{}", self.name());
         let containers = Command::new("docker")
@@ -235,6 +266,14 @@ impl Drop for Test {
                 .args(["rm", "-f", &container])
                 .status()
                 .unwrap();
+        }
+    }
+}
+
+impl<S> Drop for TestHarness<S> {
+    fn drop(&mut self) {
+        if self.droppable {
+            self.drop();
         }
     }
 }

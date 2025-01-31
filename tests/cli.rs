@@ -6,7 +6,7 @@ use std::{
 use berth::cli::AppConfig;
 use indoc::indoc;
 use tempfile::{NamedTempFile, TempDir};
-use test::Test;
+use test::TestHarness;
 
 pub mod test;
 
@@ -33,7 +33,7 @@ fn env_name_with_config_in_xdg_config_path() {
         .join("config.toml");
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
 
-    Test::new()
+    TestHarness::new()
         .config_with_path(
             &indoc!(
                 r#"
@@ -64,7 +64,7 @@ fn env_name_with_config_in_home_path() {
         .join("config.toml");
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
 
-    Test::new()
+    TestHarness::new()
         .config_with_path(
             &indoc!(
                 r#"
@@ -98,7 +98,7 @@ fn env_name_with_no_config_in_env() {
     //     "Could not find config file in $XDG_CONFIG_PATH or $HOME"
     // );
 
-    Test::new()
+    TestHarness::new()
         .config(&indoc!(
             r#"
             image = "alpine:edge"
