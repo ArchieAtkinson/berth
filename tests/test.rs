@@ -7,6 +7,7 @@ use rexpect::{
 use std::{
     env, fs,
     marker::PhantomData,
+    mem,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -70,7 +71,6 @@ pub struct TestHarness<S> {
     working_dir: Option<String>,
     envs: Vec<(String, String)>,
     _state: PhantomData<S>,
-    droppable: bool,
 }
 
 impl TestHarness<Configuring> {
@@ -84,23 +84,22 @@ impl TestHarness<Configuring> {
             working_dir: None,
             envs: Vec::new(),
             _state: PhantomData,
-            droppable: false,
         }
     }
 
-    pub fn config(&mut self, content: &str) -> &mut Self {
+    pub fn config(mut self, content: &str) -> Self {
         self.tmp_file = Some(NamedTempFile::new().unwrap());
         let path = self.tmp_file.as_ref().unwrap().path().to_path_buf();
         self.config_with_path(content, &path)
     }
 
-    pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
+    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
         fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content)).unwrap();
         self.config_file = path.to_path_buf();
         self
     }
 
-    pub fn args(&mut self, args: Vec<&str>) -> &mut Self {
+    pub fn args(mut self, args: Vec<&str>) -> Self {
         self.args = args
             .into_iter()
             .map(|s| {
@@ -115,7 +114,7 @@ impl TestHarness<Configuring> {
         self
     }
 
-    pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> &mut Self {
+    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
         self.envs.extend(
             envs.iter()
                 .map(|s| (s.0.to_string(), s.1.to_string()))
@@ -124,38 +123,40 @@ impl TestHarness<Configuring> {
         self
     }
 
-    pub fn working_dir(&mut self, working_dir: &str) -> &mut Self {
+    pub fn working_dir(mut self, working_dir: &str) -> Self {
         self.working_dir = Some(working_dir.to_string());
         self
     }
 
-    pub fn run(&mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
+    pub fn run(mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
         let mut command = Command::new(bin_path);
-
-        if !self.get_args().is_empty() {
-            command.args(self.get_args());
-        }
 
         if let Some(dir) = &self.working_dir {
             command.current_dir(dir);
         }
 
-        if !self.envs.is_empty() {
-            command.envs(self.envs.clone());
-        }
+        command.args(self.args.clone());
 
-        let process = spawn_command(command, timeout_ms).unwrap();
+        command.envs(self.envs.clone());
+
+        let session = match spawn_command(command, timeout_ms) {
+            Err(e) => {
+                self.drop();
+                panic!("{:?}", e);
+            }
+            Ok(v) => v,
+        };
+
         TestHarness {
-            config_file: self.config_file.clone(),
+            config_file: mem::take(&mut self.config_file),
             tmp_file: self.tmp_file.take(),
-            name: self.name.clone(),
-            session: Some(process),
-            args: self.args.clone(),
-            working_dir: self.working_dir.clone(),
-            envs: self.envs.clone(),
+            name: mem::take(&mut self.name),
+            session: Some(session),
+            args: mem::take(&mut self.args),
+            working_dir: mem::take(&mut self.working_dir),
+            envs: mem::take(&mut self.envs),
             _state: PhantomData,
-            droppable: true,
         }
     }
 }
@@ -178,15 +179,14 @@ impl TestHarness<Running> {
     pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
         self.session.as_mut().unwrap().exp_eof().unwrap();
         TestHarness {
-            config_file: self.config_file.clone(),
+            config_file: mem::take(&mut self.config_file),
             tmp_file: self.tmp_file.take(),
-            name: self.name.clone(),
-            session: self.session.take(),
-            args: self.args.clone(),
-            working_dir: self.working_dir.clone(),
-            envs: self.envs.clone(),
+            name: mem::take(&mut self.name),
+            session: mem::take(&mut self.session),
+            args: mem::take(&mut self.args),
+            working_dir: mem::take(&mut self.working_dir),
+            envs: mem::take(&mut self.envs),
             _state: PhantomData,
-            droppable: true,
         }
     }
 }
@@ -242,34 +242,30 @@ impl<S> TestHarness<S> {
         format!("{}{}", first_chars, rest)
     }
 
-    fn get_args(&self) -> Vec<&str> {
-        self.args.iter().map(|s| s.as_str()).collect()
-    }
-
     fn drop(&mut self) {
-        let name_arg = format!("name=berth-{}", self.name());
-        let containers = Command::new("docker")
-            .args(["ps", "-a", "--filter", &name_arg, "--format", "{{.Names}}"])
-            .output()
-            .unwrap();
-        let container = String::from_utf8(containers.stdout)
-            .unwrap()
-            .trim()
-            .to_string();
-        if !container.is_empty() {
-            println!("Deleting container: {}", container);
-            Command::new("docker")
-                .args(["rm", "-f", &container])
-                .status()
+        if !self.name().is_empty() {
+            let name_arg = format!("name=berth-{}", self.name());
+            let containers = Command::new("docker")
+                .args(["ps", "-a", "--filter", &name_arg, "--format", "{{.Names}}"])
+                .output()
                 .unwrap();
+            let container = String::from_utf8(containers.stdout)
+                .unwrap()
+                .trim()
+                .to_string();
+            if !container.is_empty() {
+                println!("Deleting container: {}", container);
+                Command::new("docker")
+                    .args(["rm", "-f", &container])
+                    .status()
+                    .unwrap();
+            }
         }
     }
 }
 
 impl<S> Drop for TestHarness<S> {
     fn drop(&mut self) {
-        if self.droppable {
-            self.drop();
-        }
+        self.drop();
     }
 }

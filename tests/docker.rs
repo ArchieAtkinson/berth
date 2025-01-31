@@ -49,6 +49,27 @@ fn mount() {
 }
 
 #[test]
+fn no_init_cmds_instantly() {
+    TestHarness::new()
+        .config(indoc!(
+            r#"
+            image = "alpine:edge"
+            exec_cmds = ["apk add helix"]
+            init_cmd = ""    
+            "#
+        ))
+        .args(vec![
+            "--cleanup",
+            "--config-path",
+            "{config_path}",
+            "{name}",
+        ])
+        .run(Some(5000))
+        .expect_terminate()
+        .success();
+}
+
+#[test]
 fn exec_cmds() {
     TestHarness::new()
         .config(indoc!(
