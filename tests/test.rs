@@ -182,7 +182,7 @@ impl TestBase {
                 println!("Deleting container: {}", container);
                 Command::new("docker")
                     .args(["rm", "-f", &container])
-                    .status()
+                    .output()
                     .unwrap();
             }
         }
