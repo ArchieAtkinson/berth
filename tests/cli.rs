@@ -6,7 +6,7 @@ use std::{
 use berth::cli::AppConfig;
 use indoc::indoc;
 use tempfile::{NamedTempFile, TempDir};
-use test::TestHarness;
+use test::{TestHarness, TestOutput};
 
 pub mod test;
 
@@ -33,23 +33,21 @@ fn env_name_with_config_in_xdg_config_path() {
         .join("config.toml");
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
 
-    TestHarness::new()
+    TestOutput::new()
         .config_with_path(
             &indoc!(
                 r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
+            init_cmd = "true"
             "#,
             ),
             &file_path,
         )
-        .args(vec!["--cleanup", "{name}"])
+        .args(vec!["--no-tty", "{name}"])
         .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])
-        .run(Some(5000))
-        .expect_substring("/ #")
-        .send_line("exit")
-        .expect_terminate()
-        .success();
+        .stdout(format!("Using config file at {:?}\n", file_path))
+        .code(0)
+        .run();
 
     tmp_dir.close().unwrap();
 }
@@ -64,7 +62,7 @@ fn env_name_with_config_in_home_path() {
         .join("config.toml");
     fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
 
-    TestHarness::new()
+    TestOutput::new()
         .config_with_path(
             &indoc!(
                 r#"
@@ -74,43 +72,29 @@ fn env_name_with_config_in_home_path() {
             ),
             &file_path,
         )
-        .args(vec!["--cleanup", "{name}"])
+        .args(vec!["--no-tty", "{name}"])
         .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])
-        .run(Some(5000))
-        .expect_substring("/ #")
-        .send_line("exit")
-        .expect_terminate()
-        .success();
+        .stdout(format!("Using config file at {:?}\n", file_path))
+        .code(0)
+        .run();
 
     tmp_dir.close().unwrap();
 }
 
 #[test]
 fn env_name_with_no_config_in_env() {
-    // let args = vec!["berth", "Name"];
-
-    // let empty_env_var = AppEnvVar::new()
-    //     .set_var("HOME", "")
-    //     .set_var("XDG_CONFIG_PATH", "");
-    // let app_config = AppConfig::new(args, &empty_env_var).err().unwrap();
-    // assert_eq!(
-    //     app_config.to_string(),
-    //     "Could not find config file in $XDG_CONFIG_PATH or $HOME"
-    // );
-
-    TestHarness::new()
+    TestOutput::new()
         .config(&indoc!(
             r#"
             image = "alpine:edge"
             init_cmd = "/bin/ash"
             "#,
         ))
-        .args(vec!["--cleanup", "{name}"])
+        .args(vec!["--no-tty", "{name}"])
         .envs(vec![("HOME", ""), ("XDG_CONFIG_PATH", "")])
-        .run(Some(5000))
-        .expect_substring("Could not find config file in $XDG_CONFIG_PATH or $HOME")
-        .expect_terminate()
-        .failure(1);
+        .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")
+        .code(1)
+        .run();
 }
 
 #[test]
@@ -157,4 +141,19 @@ fn incorrect_option_command() {
         "#
         )
     );
+}
+
+#[test]
+fn no_tty_prevents_interactive_terminal() {
+    TestHarness::new()
+        .config(&indoc!(
+            r#"
+            image = "alpine:edge"
+            init_cmd = "/bin/ash"
+            "#,
+        ))
+        .args(vec!["--no-tty", "--config-path", "{config_path}", "{name}"])
+        .run(Some(5000))
+        .expect_terminate()
+        .success();
 }

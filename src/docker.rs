@@ -18,10 +18,11 @@ const ENVIRONMENT_PREFIX: &str = "berth-";
 
 pub struct Docker {
     env: Env,
+    no_tty: bool,
 }
 
 impl Docker {
-    pub fn new(mut env: Env) -> Self {
+    pub fn new(mut env: Env, no_tty: bool) -> Self {
         let mut hasher = DefaultHasher::new();
         env.hash(&mut hasher);
         env.name = format!(
@@ -30,7 +31,7 @@ impl Docker {
             env.name,
             hasher.finish()
         );
-        Docker { env }
+        Docker { env, no_tty }
     }
 
     pub fn create_new_environment(&self) -> Result<(), DockerError> {
@@ -41,7 +42,10 @@ impl Docker {
     }
 
     pub fn enter_environment(&self) -> Result<(), DockerError> {
-        let mut enter_args = vec!["exec", "-it"];
+        let mut enter_args = vec!["exec"];
+        if !self.no_tty {
+            enter_args.push("-it");
+        }
 
         if let Some(user) = &self.env.user {
             enter_args.extend_from_slice(&["-u", user]);

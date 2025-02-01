@@ -58,48 +58,41 @@ impl Drop for TmpEnvVar {
 
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
-pub struct Configuring;
-pub struct Running;
-pub struct Terminated;
-
-pub struct TestHarness<S> {
+struct TestBase {
     config_file: PathBuf,
     tmp_file: Option<NamedTempFile>,
     name: String,
-    session: Option<PtySession>,
     args: Vec<String>,
     working_dir: Option<String>,
     envs: Vec<(String, String)>,
-    _state: PhantomData<S>,
 }
 
-impl TestHarness<Configuring> {
+impl TestBase {
     pub fn new() -> Self {
         Self {
             config_file: PathBuf::new(),
             tmp_file: None,
             name: Self::generate_random_environment_name(),
-            session: None,
             args: Vec::new(),
             working_dir: None,
             envs: Vec::new(),
-            _state: PhantomData,
         }
     }
 
-    pub fn config(mut self, content: &str) -> Self {
+    pub fn config(&mut self, content: &str) -> &mut Self {
         self.tmp_file = Some(NamedTempFile::new().unwrap());
         let path = self.tmp_file.as_ref().unwrap().path().to_path_buf();
-        self.config_with_path(content, &path)
+        self.config_with_path(content, &path);
+        self
     }
 
-    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
+    pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
         fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content)).unwrap();
         self.config_file = path.to_path_buf();
         self
     }
 
-    pub fn args(mut self, args: Vec<&str>) -> Self {
+    pub fn args(&mut self, args: Vec<&str>) -> &mut Self {
         self.args = args
             .into_iter()
             .map(|s| {
@@ -114,7 +107,7 @@ impl TestHarness<Configuring> {
         self
     }
 
-    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
+    pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> &mut Self {
         self.envs.extend(
             envs.iter()
                 .map(|s| (s.0.to_string(), s.1.to_string()))
@@ -123,94 +116,13 @@ impl TestHarness<Configuring> {
         self
     }
 
-    pub fn working_dir(mut self, working_dir: &str) -> Self {
+    pub fn working_dir(&mut self, working_dir: &str) -> &mut Self {
         self.working_dir = Some(working_dir.to_string());
         self
     }
-
-    pub fn run(mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
-        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
-        let mut command = Command::new(bin_path);
-
-        if let Some(dir) = &self.working_dir {
-            command.current_dir(dir);
-        }
-
-        command.args(self.args.clone());
-
-        command.envs(self.envs.clone());
-
-        let session = match spawn_command(command, timeout_ms) {
-            Err(e) => {
-                self.drop();
-                panic!("{:?}", e);
-            }
-            Ok(v) => v,
-        };
-
-        TestHarness {
-            config_file: mem::take(&mut self.config_file),
-            tmp_file: self.tmp_file.take(),
-            name: mem::take(&mut self.name),
-            session: Some(session),
-            args: mem::take(&mut self.args),
-            working_dir: mem::take(&mut self.working_dir),
-            envs: mem::take(&mut self.envs),
-            _state: PhantomData,
-        }
-    }
 }
 
-impl TestHarness<Running> {
-    pub fn send_line(mut self, cmd: &str) -> Self {
-        self.session.as_mut().unwrap().send_line(cmd).unwrap();
-        self
-    }
-
-    pub fn expect_substring(mut self, expect: &str) -> Self {
-        self.session
-            .as_mut()
-            .unwrap()
-            .exp_any(vec![ReadUntil::String(expect.into())])
-            .unwrap();
-        self
-    }
-
-    pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
-        self.session.as_mut().unwrap().exp_eof().unwrap();
-        TestHarness {
-            config_file: mem::take(&mut self.config_file),
-            tmp_file: self.tmp_file.take(),
-            name: mem::take(&mut self.name),
-            session: mem::take(&mut self.session),
-            args: mem::take(&mut self.args),
-            working_dir: mem::take(&mut self.working_dir),
-            envs: mem::take(&mut self.envs),
-            _state: PhantomData,
-        }
-    }
-}
-
-impl TestHarness<Terminated> {
-    pub fn success(mut self) {
-        match self.session.as_mut().unwrap().process.wait().unwrap() {
-            WaitStatus::Exited(_, 0) => (),
-            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
-            v => panic!("Unexpected Process WaitStatus {:?}", v),
-        }
-    }
-
-    pub fn failure(mut self, expected_code: i32) {
-        match self.session.as_mut().unwrap().process.wait().unwrap() {
-            WaitStatus::Exited(_, 0) => panic!("Unexpected successful exit"),
-            WaitStatus::Exited(_, n) if n == expected_code => (),
-            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
-            v => panic!("Unexpected Process WaitStatus {:?}", v),
-        }
-    }
-}
-
-impl<S> TestHarness<S> {
+impl TestBase {
     pub fn config_path(&self) -> &str {
         self.config_file.to_str().unwrap()
     }
@@ -264,8 +176,225 @@ impl<S> TestHarness<S> {
     }
 }
 
-impl<S> Drop for TestHarness<S> {
+impl Drop for TestBase {
     fn drop(&mut self) {
         self.drop();
+    }
+}
+
+pub struct Configuring;
+pub struct Running;
+pub struct Terminated;
+
+pub struct TestHarness<S> {
+    base: TestBase,
+    session: Option<PtySession>,
+    _state: PhantomData<S>,
+}
+
+impl TestHarness<Configuring> {
+    pub fn new() -> Self {
+        Self {
+            base: TestBase::new(),
+            session: None,
+            _state: PhantomData,
+        }
+    }
+
+    pub fn config(mut self, content: &str) -> Self {
+        self.base.config(content);
+        self
+    }
+
+    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
+        self.base.config_with_path(content, path);
+        self
+    }
+
+    pub fn args(mut self, args: Vec<&str>) -> Self {
+        self.base.args(args);
+        self
+    }
+
+    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
+        self.base.envs(envs);
+        self
+    }
+
+    pub fn working_dir(mut self, working_dir: &str) -> Self {
+        self.base.working_dir(working_dir);
+        self
+    }
+
+    pub fn run(mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
+        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
+        let mut command = Command::new(bin_path);
+
+        if let Some(dir) = &self.base.working_dir {
+            command.current_dir(dir);
+        }
+
+        command.args(self.base.args.clone());
+
+        command.envs(self.base.envs.clone());
+
+        let session = spawn_command(command, timeout_ms).unwrap();
+        TestHarness {
+            base: TestBase {
+                config_file: mem::take(&mut self.base.config_file),
+                tmp_file: self.base.tmp_file.take(),
+                name: mem::take(&mut self.base.name),
+                args: mem::take(&mut self.base.args),
+                working_dir: mem::take(&mut self.base.working_dir),
+                envs: mem::take(&mut self.base.envs),
+            },
+            session: Some(session),
+            _state: PhantomData,
+        }
+    }
+}
+
+impl TestHarness<Running> {
+    pub fn send_line(mut self, cmd: &str) -> Self {
+        self.session.as_mut().unwrap().send_line(cmd).unwrap();
+        self
+    }
+
+    pub fn expect_substring(mut self, expect: &str) -> Self {
+        self.session
+            .as_mut()
+            .unwrap()
+            .exp_any(vec![ReadUntil::String(expect.into())])
+            .unwrap();
+        self
+    }
+
+    pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
+        self.session.as_mut().unwrap().exp_eof().unwrap();
+        TestHarness {
+            base: TestBase {
+                config_file: mem::take(&mut self.base.config_file),
+                tmp_file: self.base.tmp_file.take(),
+                name: mem::take(&mut self.base.name),
+                args: mem::take(&mut self.base.args),
+                working_dir: mem::take(&mut self.base.working_dir),
+                envs: mem::take(&mut self.base.envs),
+            },
+            session: mem::take(&mut self.session),
+            _state: PhantomData,
+        }
+    }
+}
+
+impl TestHarness<Terminated> {
+    pub fn success(mut self) {
+        match self.session.as_mut().unwrap().process.wait().unwrap() {
+            WaitStatus::Exited(_, 0) => (),
+            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
+            v => panic!("Unexpected Process WaitStatus {:?}", v),
+        }
+    }
+
+    pub fn failure(mut self, expected_code: i32) {
+        match self.session.as_mut().unwrap().process.wait().unwrap() {
+            WaitStatus::Exited(_, 0) => panic!("Unexpected successful exit"),
+            WaitStatus::Exited(_, n) if n == expected_code => (),
+            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
+            v => panic!("Unexpected Process WaitStatus {:?}", v),
+        }
+    }
+}
+
+impl<S> TestHarness<S> {
+    pub fn config_path(&self) -> &str {
+        self.base.config_path()
+    }
+
+    pub fn name(&self) -> &str {
+        self.base.name()
+    }
+}
+
+pub struct TestOutput {
+    base: TestBase,
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+}
+
+impl TestOutput {
+    pub fn new() -> Self {
+        Self {
+            base: TestBase::new(),
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: -1,
+        }
+    }
+
+    pub fn config(mut self, content: &str) -> Self {
+        self.base.config(content);
+        self
+    }
+
+    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
+        self.base.config_with_path(content, path);
+        self
+    }
+
+    pub fn args(mut self, args: Vec<&str>) -> Self {
+        if !args.contains(&"--no-tty") {
+            panic!("Error: TestOutput doesn't not provided a TTY, tests must use '--no-tty");
+        }
+        self.base.args(args);
+        self
+    }
+
+    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
+        self.base.envs(envs);
+        self
+    }
+
+    pub fn working_dir(mut self, working_dir: &str) -> Self {
+        self.base.working_dir(working_dir);
+        self
+    }
+
+    pub fn stdout(mut self, content: impl Into<String>) -> Self {
+        self.stdout = content.into();
+        self
+    }
+
+    pub fn stderr(mut self, content: impl Into<String>) -> Self {
+        self.stderr = content.into();
+        self
+    }
+
+    pub fn code(mut self, code: i32) -> Self {
+        self.exit_code = code;
+        self
+    }
+
+    pub fn run(self) {
+        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
+        let mut command = Command::new(bin_path);
+
+        if let Some(dir) = &self.base.working_dir {
+            command.current_dir(dir);
+        }
+
+        let output = command
+            .args(self.base.args.clone())
+            .envs(self.base.envs.clone())
+            .output()
+            .unwrap();
+
+        let output_stdout = String::from_utf8(output.stdout).unwrap();
+        let output_stderr = String::from_utf8(output.stderr).unwrap();
+        let output_exit_code = output.status.code().unwrap();
+
+        assert_eq!(output_stdout, self.stdout);
+        assert_eq!(output_stderr, self.stderr);
+        assert_eq!(output_exit_code, self.exit_code);
     }
 }

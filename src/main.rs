@@ -49,7 +49,7 @@ fn run() -> Result<(), AppError> {
 
     let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
 
-    let docker = Docker::new(env);
+    let docker = Docker::new(env, app_config.no_tty);
     if !docker.does_environment_exist()? {
         docker.create_new_environment()?;
     } else {
