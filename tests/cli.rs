@@ -83,6 +83,7 @@ fn env_name_with_config_in_home_path() {
 
 #[test]
 fn env_name_with_no_config_in_env() {
+    // Note: TestOutput doesn't inherit envs
     TestOutput::new()
         .config(&indoc!(
             r#"
@@ -91,7 +92,6 @@ fn env_name_with_no_config_in_env() {
             "#,
         ))
         .args(vec!["--no-tty", "{name}"])
-        .envs(vec![("HOME", ""), ("XDG_CONFIG_PATH", "")])
         .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")
         .code(1)
         .run();

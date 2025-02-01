@@ -120,6 +120,19 @@ impl TestBase {
         self.working_dir = Some(working_dir.to_string());
         self
     }
+
+    pub fn create_command(&mut self) -> Command {
+        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
+        let mut command = Command::new(bin_path);
+
+        if let Some(dir) = &self.working_dir {
+            command.current_dir(dir);
+        }
+        command.env_clear();
+        command.args(self.args.clone());
+        command.envs(self.envs.clone());
+        command
+    }
 }
 
 impl TestBase {
@@ -227,16 +240,7 @@ impl TestHarness<Configuring> {
     }
 
     pub fn run(mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
-        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
-        let mut command = Command::new(bin_path);
-
-        if let Some(dir) = &self.base.working_dir {
-            command.current_dir(dir);
-        }
-
-        command.args(self.base.args.clone());
-
-        command.envs(self.base.envs.clone());
+        let command = self.base.create_command();
 
         let session = spawn_command(command, timeout_ms).unwrap();
         TestHarness {
@@ -375,19 +379,8 @@ impl TestOutput {
         self
     }
 
-    pub fn run(self) {
-        let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
-        let mut command = Command::new(bin_path);
-
-        if let Some(dir) = &self.base.working_dir {
-            command.current_dir(dir);
-        }
-
-        let output = command
-            .args(self.base.args.clone())
-            .envs(self.base.envs.clone())
-            .output()
-            .unwrap();
+    pub fn run(mut self) {
+        let output = self.base.create_command().output().unwrap();
 
         let output_stdout = String::from_utf8(output.stdout).unwrap();
         let output_stderr = String::from_utf8(output.stderr).unwrap();
