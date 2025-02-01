@@ -1,6 +1,7 @@
 use berth::cli::AppConfig;
 use color_eyre::Result;
 use indoc::indoc;
+use pretty_assertions::assert_eq;
 use std::{
     fs::{self},
     path::PathBuf,

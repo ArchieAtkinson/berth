@@ -1,6 +1,7 @@
 use color_eyre::{eyre::eyre, Result};
 use ctor::ctor;
 use eyre::{Context, ContextCompat};
+use pretty_assertions::assert_eq;
 use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
@@ -291,7 +292,7 @@ impl TestHarness {
                 envs: mem::take(&mut self.base.envs),
                 command_string: mem::take(&mut self.base.command_string),
             },
-            session: session,
+            session,
         })
     }
 }
