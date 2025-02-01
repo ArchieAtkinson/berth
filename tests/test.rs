@@ -1,3 +1,6 @@
+use color_eyre::{eyre::eyre, Result};
+use ctor::ctor;
+use eyre::{Context, ContextCompat};
 use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
@@ -5,13 +8,16 @@ use rexpect::{
     ReadUntil,
 };
 use std::{
-    env, fs,
-    marker::PhantomData,
-    mem,
+    env, fs, mem,
     path::{Path, PathBuf},
     process::Command,
 };
 use tempfile::NamedTempFile;
+
+#[ctor]
+fn setup() {
+    color_eyre::install().unwrap();
+}
 
 pub struct TmpEnvVar {
     name: String,
@@ -63,8 +69,9 @@ struct TestBase {
     tmp_file: Option<NamedTempFile>,
     name: String,
     args: Vec<String>,
-    working_dir: Option<String>,
+    working_dir: Option<PathBuf>,
     envs: Vec<(String, String)>,
+    command_string: String,
 }
 
 impl TestBase {
@@ -76,23 +83,29 @@ impl TestBase {
             args: Vec::new(),
             working_dir: None,
             envs: Vec::new(),
+            command_string: String::new(),
         }
     }
 
-    pub fn config(&mut self, content: &str) -> &mut Self {
-        self.tmp_file = Some(NamedTempFile::new().unwrap());
-        let path = self.tmp_file.as_ref().unwrap().path().to_path_buf();
-        self.config_with_path(content, &path);
-        self
+    #[track_caller]
+    pub fn config(&mut self, content: &str) -> Result<&mut Self> {
+        let tmp_file =
+            NamedTempFile::new().wrap_err("Failed to create temporary file for config")?;
+        let path = tmp_file.path().to_path_buf();
+        self.tmp_file = Some(tmp_file);
+        self.config_with_path(content, &path)
     }
 
-    pub fn config_with_path(&mut self, content: &str, path: &Path) -> &mut Self {
-        fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content)).unwrap();
+    #[track_caller]
+    pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
+        fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content))
+            .wrap_err("Failed to write config to temporary file")?;
         self.config_file = path.to_path_buf();
-        self
+        Ok(self)
     }
 
-    pub fn args(&mut self, args: Vec<&str>) -> &mut Self {
+    #[track_caller]
+    pub fn args(&mut self, args: Vec<&str>) -> Result<&mut Self> {
         self.args = args
             .into_iter()
             .map(|s| {
@@ -104,26 +117,38 @@ impl TestBase {
                 .to_string()
             })
             .collect();
-        self
+        Ok(self)
     }
 
-    pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> &mut Self {
+    #[track_caller]
+    pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> Result<&mut Self> {
         self.envs.extend(
             envs.iter()
                 .map(|s| (s.0.to_string(), s.1.to_string()))
                 .collect::<Vec<(String, String)>>(),
         );
-        self
+        Ok(self)
     }
 
-    pub fn working_dir(&mut self, working_dir: &str) -> &mut Self {
-        self.working_dir = Some(working_dir.to_string());
-        self
+    #[track_caller]
+    pub fn working_dir(&mut self, working_dir: &str) -> Result<&mut Self> {
+        let full_path = fs::canonicalize(working_dir)
+            .wrap_err("Failed to create canonical path for working directory")?;
+        if !full_path.exists() {
+            return Err(eyre!("Provided working directory does not exist"));
+        }
+        if !full_path.is_dir() {
+            return Err(eyre!("Provided working directory is not a directory"));
+        }
+
+        self.working_dir = Some(full_path);
+        Ok(self)
     }
 
-    pub fn create_command(&mut self) -> Command {
+    #[track_caller]
+    pub fn create_command(&mut self) -> Result<Command> {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
-        let mut command = Command::new(bin_path);
+        let mut command = Command::new(&bin_path);
 
         if let Some(dir) = &self.working_dir {
             command.current_dir(dir);
@@ -131,7 +156,12 @@ impl TestBase {
         command.env_clear();
         command.args(self.args.clone());
         command.envs(self.envs.clone());
-        command
+
+        let command_vec: Vec<String> = std::iter::once(bin_path.display().to_string())
+            .chain(self.args.clone())
+            .collect();
+        self.command_string = shell_words::join(command_vec);
+        Ok(command)
     }
 }
 
@@ -195,55 +225,63 @@ impl Drop for TestBase {
     }
 }
 
-pub struct Configuring;
-pub struct Running;
-pub struct Terminated;
-
-pub struct TestHarness<S> {
+pub struct TestHarness {
     base: TestBase,
-    session: Option<PtySession>,
-    _state: PhantomData<S>,
 }
 
-impl TestHarness<Configuring> {
+pub struct RunningTestHarness {
+    base: TestBase,
+    session: PtySession,
+}
+
+pub struct TerminatedTestHarness {
+    base: TestBase,
+    wait_status: WaitStatus,
+}
+
+impl TestHarness {
     pub fn new() -> Self {
         Self {
             base: TestBase::new(),
-            session: None,
-            _state: PhantomData,
         }
     }
 
-    pub fn config(mut self, content: &str) -> Self {
-        self.base.config(content);
-        self
+    #[track_caller]
+    pub fn config(mut self, content: &str) -> Result<Self> {
+        self.base.config(content)?;
+        Ok(self)
     }
 
-    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
-        self.base.config_with_path(content, path);
-        self
+    #[track_caller]
+    pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
+        self.base.config_with_path(content, path)?;
+        Ok(self)
     }
 
-    pub fn args(mut self, args: Vec<&str>) -> Self {
-        self.base.args(args);
-        self
+    #[track_caller]
+    pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
+        self.base.args(args)?;
+        Ok(self)
     }
 
-    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
-        self.base.envs(envs);
-        self
+    #[track_caller]
+    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
+        self.base.envs(envs)?;
+        Ok(self)
     }
 
-    pub fn working_dir(mut self, working_dir: &str) -> Self {
-        self.base.working_dir(working_dir);
-        self
+    #[track_caller]
+    pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
+        self.base.working_dir(working_dir)?;
+        Ok(self)
     }
 
-    pub fn run(mut self, timeout_ms: Option<u64>) -> TestHarness<Running> {
-        let command = self.base.create_command();
+    #[track_caller]
+    pub fn run(mut self, timeout_ms: Option<u64>) -> Result<RunningTestHarness> {
+        let command = self.base.create_command()?;
 
         let session = spawn_command(command, timeout_ms).unwrap();
-        TestHarness {
+        Ok(RunningTestHarness {
             base: TestBase {
                 config_file: mem::take(&mut self.base.config_file),
                 tmp_file: self.base.tmp_file.take(),
@@ -251,31 +289,49 @@ impl TestHarness<Configuring> {
                 args: mem::take(&mut self.base.args),
                 working_dir: mem::take(&mut self.base.working_dir),
                 envs: mem::take(&mut self.base.envs),
+                command_string: mem::take(&mut self.base.command_string),
             },
-            session: Some(session),
-            _state: PhantomData,
-        }
+            session: session,
+        })
     }
 }
 
-impl TestHarness<Running> {
-    pub fn send_line(mut self, cmd: &str) -> Self {
-        self.session.as_mut().unwrap().send_line(cmd).unwrap();
-        self
+impl TestHarness {
+    pub fn config_path(&self) -> &str {
+        self.base.config_path()
     }
 
-    pub fn expect_substring(mut self, expect: &str) -> Self {
+    pub fn name(&self) -> &str {
+        self.base.name()
+    }
+}
+
+impl RunningTestHarness {
+    #[track_caller]
+    pub fn send_line(mut self, cmd: &str) -> Result<Self> {
         self.session
-            .as_mut()
-            .unwrap()
-            .exp_any(vec![ReadUntil::String(expect.into())])
-            .unwrap();
-        self
+            .send_line(cmd)
+            .wrap_err("Failed to send line")?;
+        Ok(self)
     }
 
-    pub fn expect_terminate(mut self) -> TestHarness<Terminated> {
-        self.session.as_mut().unwrap().exp_eof().unwrap();
-        TestHarness {
+    #[track_caller]
+    pub fn expect_substring(mut self, expect: &str) -> Result<Self> {
+        self.session
+            .exp_any(vec![ReadUntil::String(expect.into())])
+            .wrap_err("Failed to expect a substring")?;
+        Ok(self)
+    }
+
+    #[track_caller]
+    pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
+        self.session.exp_eof().wrap_err("Failed to expect EOF")?;
+        let wait_status = self
+            .session
+            .process
+            .wait()
+            .wrap_err("Failed to wait for process to exit")?;
+        Ok(TerminatedTestHarness {
             base: TestBase {
                 config_file: mem::take(&mut self.base.config_file),
                 tmp_file: self.base.tmp_file.take(),
@@ -283,33 +339,45 @@ impl TestHarness<Running> {
                 args: mem::take(&mut self.base.args),
                 working_dir: mem::take(&mut self.base.working_dir),
                 envs: mem::take(&mut self.base.envs),
+                command_string: mem::take(&mut self.base.command_string),
             },
-            session: mem::take(&mut self.session),
-            _state: PhantomData,
+            wait_status,
+        })
+    }
+}
+
+impl RunningTestHarness {
+    pub fn config_path(&self) -> &str {
+        self.base.config_path()
+    }
+
+    pub fn name(&self) -> &str {
+        self.base.name()
+    }
+}
+
+impl TerminatedTestHarness {
+    #[track_caller]
+    pub fn success(self) -> Result<()> {
+        match self.wait_status {
+            WaitStatus::Exited(_, 0) => Ok(()),
+            WaitStatus::Exited(_, n) => Err(eyre!("Unexpected exit code: {}", n)),
+            v => Err(eyre!("Unexpected Process WaitStatus {:?}", v)),
+        }
+    }
+
+    #[track_caller]
+    pub fn failure(self, expected_code: i32) -> Result<()> {
+        match self.wait_status {
+            WaitStatus::Exited(_, 0) => Err(eyre!("Unexpected successful exit")),
+            WaitStatus::Exited(_, n) if n == expected_code => Ok(()),
+            WaitStatus::Exited(_, n) => Err(eyre!("Unexpected exit code: {}", n)),
+            v => Err(eyre!("Unexpected Process WaitStatus {:?}", v)),
         }
     }
 }
 
-impl TestHarness<Terminated> {
-    pub fn success(mut self) {
-        match self.session.as_mut().unwrap().process.wait().unwrap() {
-            WaitStatus::Exited(_, 0) => (),
-            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
-            v => panic!("Unexpected Process WaitStatus {:?}", v),
-        }
-    }
-
-    pub fn failure(mut self, expected_code: i32) {
-        match self.session.as_mut().unwrap().process.wait().unwrap() {
-            WaitStatus::Exited(_, 0) => panic!("Unexpected successful exit"),
-            WaitStatus::Exited(_, n) if n == expected_code => (),
-            WaitStatus::Exited(_, n) => panic!("Unexpected exit code: {}", n),
-            v => panic!("Unexpected Process WaitStatus {:?}", v),
-        }
-    }
-}
-
-impl<S> TestHarness<S> {
+impl TerminatedTestHarness {
     pub fn config_path(&self) -> &str {
         self.base.config_path()
     }
@@ -336,58 +404,76 @@ impl TestOutput {
         }
     }
 
-    pub fn config(mut self, content: &str) -> Self {
-        self.base.config(content);
-        self
+    #[track_caller]
+    pub fn config(mut self, content: &str) -> Result<Self> {
+        self.base.config(content)?;
+        Ok(self)
     }
 
-    pub fn config_with_path(mut self, content: &str, path: &Path) -> Self {
-        self.base.config_with_path(content, path);
-        self
+    #[track_caller]
+    pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
+        self.base.config_with_path(content, path)?;
+        Ok(self)
     }
 
-    pub fn args(mut self, args: Vec<&str>) -> Self {
+    #[track_caller]
+    pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
         if !args.contains(&"--no-tty") {
-            panic!("Error: TestOutput doesn't not provided a TTY, tests must use '--no-tty");
+            return Err(eyre!(
+                "Error: TestOutput doesn't not provided a TTY, tests must use '--no-tty"
+            ));
         }
-        self.base.args(args);
-        self
+        self.base.args(args)?;
+        Ok(self)
     }
 
-    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Self {
-        self.base.envs(envs);
-        self
+    #[track_caller]
+    pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
+        self.base.envs(envs)?;
+        Ok(self)
     }
 
-    pub fn working_dir(mut self, working_dir: &str) -> Self {
-        self.base.working_dir(working_dir);
-        self
+    #[track_caller]
+    pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
+        self.base.working_dir(working_dir)?;
+        Ok(self)
     }
 
-    pub fn stdout(mut self, content: impl Into<String>) -> Self {
+    #[track_caller]
+    pub fn stdout(mut self, content: impl Into<String>) -> Result<Self> {
         self.stdout = content.into();
-        self
+        Ok(self)
     }
 
-    pub fn stderr(mut self, content: impl Into<String>) -> Self {
+    #[track_caller]
+    pub fn stderr(mut self, content: impl Into<String>) -> Result<Self> {
         self.stderr = content.into();
-        self
+        Ok(self)
     }
 
-    pub fn code(mut self, code: i32) -> Self {
+    #[track_caller]
+    pub fn code(mut self, code: i32) -> Result<Self> {
         self.exit_code = code;
-        self
+        Ok(self)
     }
 
-    pub fn run(mut self) {
-        let output = self.base.create_command().output().unwrap();
-
-        let output_stdout = String::from_utf8(output.stdout).unwrap();
-        let output_stderr = String::from_utf8(output.stderr).unwrap();
-        let output_exit_code = output.status.code().unwrap();
+    #[track_caller]
+    pub fn run(mut self) -> Result<()> {
+        let output = self
+            .base
+            .create_command()?
+            .output()
+            .wrap_err(eyre!("Failed to run {}", self.base.command_string))?;
+        let output_stdout =
+            String::from_utf8(output.stdout).wrap_err("Failed to convert stdout from utf8")?;
+        let output_stderr =
+            String::from_utf8(output.stderr).wrap_err("Failed to convert stderr from utf8")?;
+        let output_exit_code = output.status.code().wrap_err("Failed to get exit code")?;
 
         assert_eq!(output_stdout, self.stdout);
         assert_eq!(output_stderr, self.stderr);
         assert_eq!(output_exit_code, self.exit_code);
+
+        Ok(())
     }
 }

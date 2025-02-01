@@ -1,10 +1,10 @@
+use berth::cli::AppConfig;
+use color_eyre::Result;
+use indoc::indoc;
 use std::{
     fs::{self},
     path::PathBuf,
 };
-
-use berth::cli::AppConfig;
-use indoc::indoc;
 use tempfile::{NamedTempFile, TempDir};
 use test::{TestHarness, TestOutput};
 
@@ -24,7 +24,7 @@ fn no_commands() {
 }
 
 #[test]
-fn env_name_with_config_in_xdg_config_path() {
+fn env_name_with_config_in_xdg_config_path() -> Result<()> {
     let tmp_dir = TempDir::new().unwrap();
     let file_path = tmp_dir
         .path()
@@ -42,18 +42,20 @@ fn env_name_with_config_in_xdg_config_path() {
             "#,
             ),
             &file_path,
-        )
-        .args(vec!["--no-tty", "{name}"])
-        .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])
-        .stdout(format!("Using config file at {:?}\n", file_path))
-        .code(0)
-        .run();
+        )?
+        .args(vec!["--no-tty", "{name}"])?
+        .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])?
+        .stdout(format!("Using config file at {:?}\n", file_path))?
+        .code(0)?
+        .run()?;
 
     tmp_dir.close().unwrap();
+
+    Ok(())
 }
 
 #[test]
-fn env_name_with_config_in_home_path() {
+fn env_name_with_config_in_home_path() -> Result<()> {
     let tmp_dir = TempDir::new().unwrap();
     let file_path = tmp_dir
         .path()
@@ -71,18 +73,19 @@ fn env_name_with_config_in_home_path() {
             "#,
             ),
             &file_path,
-        )
-        .args(vec!["--no-tty", "{name}"])
-        .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])
-        .stdout(format!("Using config file at {:?}\n", file_path))
-        .code(0)
-        .run();
+        )?
+        .args(vec!["--no-tty", "{name}"])?
+        .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])?
+        .stdout(format!("Using config file at {:?}\n", file_path))?
+        .code(0)?
+        .run()?;
 
     tmp_dir.close().unwrap();
+    Ok(())
 }
 
 #[test]
-fn env_name_with_no_config_in_env() {
+fn env_name_with_no_config_in_env() -> Result<()> {
     // Note: TestOutput doesn't inherit envs
     TestOutput::new()
         .config(&indoc!(
@@ -90,11 +93,11 @@ fn env_name_with_no_config_in_env() {
             image = "alpine:edge"
             init_cmd = "/bin/ash"
             "#,
-        ))
-        .args(vec!["--no-tty", "{name}"])
-        .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")
-        .code(1)
-        .run();
+        ))?
+        .args(vec!["--no-tty", "{name}"])?
+        .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")?
+        .code(1)?
+        .run()
 }
 
 #[test]
@@ -144,16 +147,16 @@ fn incorrect_option_command() {
 }
 
 #[test]
-fn no_tty_prevents_interactive_terminal() {
+fn no_tty_prevents_interactive_terminal() -> Result<()> {
     TestHarness::new()
         .config(&indoc!(
             r#"
             image = "alpine:edge"
             init_cmd = "/bin/ash"
             "#,
-        ))
-        .args(vec!["--no-tty", "--config-path", "{config_path}", "{name}"])
-        .run(Some(5000))
-        .expect_terminate()
-        .success();
+        ))?
+        .args(vec!["--no-tty", "--config-path", "{config_path}", "{name}"])?
+        .run(Some(5000))?
+        .expect_terminate()?
+        .success()
 }
