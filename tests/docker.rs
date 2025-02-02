@@ -31,7 +31,7 @@ fn mount() -> Result<()> {
             container_mount_dir
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
-        .run(Some(5000))?
+        .run(5000)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
         .send_line("exit")?
         .stdio(&formatdoc!(
@@ -65,7 +65,7 @@ fn exec_cmds() -> Result<()> {
             "[config_path]",
             "[name]",
         ])?
-        .run(Some(5000))?
+        .run(5000)?
         .send_line("which asciiquarium")?
         .send_line("exit")?
         .stdio(&indoc!(
@@ -109,7 +109,7 @@ fn mount_working_dir() -> Result<()> {
             "[config_path]",
             "[name]",
         ])?
-        .run(Some(5000))?
+        .run(5000)?
         .send_line(&format!("cat {mounted_file_name}"))?
         .send_line("exit")?
         .stdio(&formatdoc!(
@@ -152,7 +152,7 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             "#,
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
-        .run(Some(5000))?
+        .run(5000)?
         .send_line("echo $0")?;
 
     let container_name = harness.name().to_string();
@@ -168,7 +168,7 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             harness.config_path(),
             &container_name,
         ])?
-        .run(Some(5000))?
+        .run(5000)?
         .send_line("echo $0")?
         .send_line("exit")?
         .stdio(&formatdoc!(

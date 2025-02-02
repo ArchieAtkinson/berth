@@ -1,17 +1,17 @@
 use color_eyre::{eyre::eyre, Result};
 use ctor::ctor;
+use expectrl::{Session, WaitStatus};
 use eyre::{Context, ContextCompat};
 use pretty_assertions::assert_eq;
 use rand::{thread_rng, Rng};
-use rexpect::{
-    process::wait::WaitStatus,
-    session::{spawn_command, PtySession},
-};
 use std::{
     collections::HashMap,
-    env, fs, mem,
+    env, fs,
+    io::Read,
+    mem,
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 use tempfile::NamedTempFile;
 
@@ -248,7 +248,7 @@ pub struct TestHarness {
 
 pub struct RunningTestHarness {
     base: TestBase,
-    session: PtySession,
+    session: Session,
 }
 
 pub struct TerminatedTestHarness {
@@ -300,10 +300,12 @@ impl TestHarness {
 
     #[must_use]
     #[track_caller]
-    pub fn run(mut self, timeout_ms: Option<u64>) -> Result<RunningTestHarness> {
+    pub fn run(mut self, timeout_ms: u64) -> Result<RunningTestHarness> {
         let command = self.base.create_command()?;
 
-        let session = spawn_command(command, timeout_ms).unwrap();
+        let mut session = Session::spawn(command).unwrap();
+        session.set_expect_timeout(Some(Duration::from_millis(timeout_ms)));
+
         Ok(RunningTestHarness {
             base: TestBase {
                 config_path: mem::take(&mut self.base.config_path),
@@ -341,14 +343,18 @@ impl RunningTestHarness {
     #[must_use]
     #[track_caller]
     pub fn stdio(mut self, expected: &str) -> Result<TerminatedTestHarness> {
-        let output_stripped = self
-            .session
-            .exp_eof()
-            .wrap_err("Failed to get EOF")?
+        let mut output_stripped = String::new();
+        self.session
+            .read_to_string(&mut output_stripped)
+            .wrap_err("Failed to get EOF")?;
+
+        output_stripped = output_stripped
             .lines()
             .map(|line| strip_ansi_escapes::strip_str(line))
             .collect::<Vec<String>>()
-            .join("\n");
+            .join("\n")
+            .trim_end()
+            .to_string();
 
         let mut updated_expected = expected.to_string();
         for (key, value) in &self.base.replacements {
@@ -356,11 +362,15 @@ impl RunningTestHarness {
         }
         updated_expected = updated_expected.trim_end().to_string();
 
-        assert_eq!(output_stripped, updated_expected);
+        assert_eq!(
+            output_stripped, updated_expected,
+            "{:?} \n\n {:?}",
+            output_stripped, updated_expected
+        );
 
         let wait_status = self
             .session
-            .process
+            .get_process()
             .wait()
             .wrap_err("Failed to wait for process to exit")?;
 
@@ -379,29 +389,29 @@ impl RunningTestHarness {
         })
     }
 
-    #[must_use]
-    #[track_caller]
-    pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
-        self.session.exp_eof().wrap_err("Failed to get EOF")?;
-        let wait_status = self
-            .session
-            .process
-            .wait()
-            .wrap_err("Failed to wait for process to exit")?;
-        Ok(TerminatedTestHarness {
-            base: TestBase {
-                config_path: mem::take(&mut self.base.config_path),
-                tmp_config_file: self.base.tmp_config_file.take(),
-                name: mem::take(&mut self.base.name),
-                args: mem::take(&mut self.base.args),
-                working_dir: mem::take(&mut self.base.working_dir),
-                envs: mem::take(&mut self.base.envs),
-                command_string: mem::take(&mut self.base.command_string),
-                replacements: mem::take(&mut self.base.replacements),
-            },
-            wait_status,
-        })
-    }
+    // #[must_use]
+    // #[track_caller]
+    // pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
+    //     self.session.exp_eof().wrap_err("Failed to get EOF")?;
+    //     let wait_status = self
+    //         .session
+    //         .process
+    //         .wait()
+    //         .wrap_err("Failed to wait for process to exit")?;
+    //     Ok(TerminatedTestHarness {
+    //         base: TestBase {
+    //             config_path: mem::take(&mut self.base.config_path),
+    //             tmp_config_file: self.base.tmp_config_file.take(),
+    //             name: mem::take(&mut self.base.name),
+    //             args: mem::take(&mut self.base.args),
+    //             working_dir: mem::take(&mut self.base.working_dir),
+    //             envs: mem::take(&mut self.base.envs),
+    //             command_string: mem::take(&mut self.base.command_string),
+    //             replacements: mem::take(&mut self.base.replacements),
+    //         },
+    //         wait_status,
+    //     })
+    // }
 
     pub fn config_path(&self) -> &str {
         self.base.config_path()

@@ -1,6 +1,6 @@
 use berth::cli::AppConfig;
 use color_eyre::Result;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use pretty_assertions::assert_eq;
 use std::{
     fs::{self},
@@ -157,7 +157,11 @@ fn no_tty_prevents_interactive_terminal() -> Result<()> {
             "#,
         ))?
         .args(vec!["--no-tty", "--config-path", "[config_path]", "[name]"])?
-        .run(Some(5000))?
-        .expect_terminate()?
+        .run(5000)?
+        .stdio(&formatdoc!(
+            r#"
+            Using config file at "[config_path]"
+            "#
+        ))?
         .success()
 }
