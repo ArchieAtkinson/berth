@@ -66,8 +66,8 @@ impl Drop for TmpEnvVar {
 const BINARY: &str = env!("CARGO_PKG_NAME");
 
 struct TestBase {
-    config_file: PathBuf,
-    tmp_file: Option<NamedTempFile>,
+    config_path: PathBuf,
+    tmp_config_file: Option<NamedTempFile>,
     name: String,
     args: Vec<String>,
     working_dir: Option<PathBuf>,
@@ -82,8 +82,8 @@ impl TestBase {
         let replacements = HashMap::from([("[name]".to_string(), name.clone())]);
 
         Self {
-            config_file: PathBuf::new(),
-            tmp_file: None,
+            config_path: PathBuf::new(),
+            tmp_config_file: None,
             name,
             args: Vec::new(),
             working_dir: None,
@@ -103,7 +103,7 @@ impl TestBase {
             "[config_path]".to_string(),
             tmp_file.path().display().to_string(),
         );
-        self.tmp_file = Some(tmp_file);
+        self.tmp_config_file = Some(tmp_file);
         self.config_with_path(content, &path)
     }
 
@@ -112,7 +112,7 @@ impl TestBase {
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
         fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content))
             .wrap_err("Failed to write config to temporary file")?;
-        self.config_file = path.to_path_buf();
+        self.config_path = path.to_path_buf();
         Ok(self)
     }
 
@@ -182,7 +182,7 @@ impl TestBase {
 
 impl TestBase {
     pub fn config_path(&self) -> &str {
-        self.config_file.to_str().unwrap()
+        self.config_path.to_str().unwrap()
     }
 
     pub fn name(&self) -> &str {
@@ -307,8 +307,8 @@ impl TestHarness {
         let session = spawn_command(command, timeout_ms).unwrap();
         Ok(RunningTestHarness {
             base: TestBase {
-                config_file: mem::take(&mut self.base.config_file),
-                tmp_file: self.base.tmp_file.take(),
+                config_path: mem::take(&mut self.base.config_path),
+                tmp_config_file: self.base.tmp_config_file.take(),
                 name: mem::take(&mut self.base.name),
                 args: mem::take(&mut self.base.args),
                 working_dir: mem::take(&mut self.base.working_dir),
@@ -371,8 +371,8 @@ impl RunningTestHarness {
 
         Ok(TerminatedTestHarness {
             base: TestBase {
-                config_file: mem::take(&mut self.base.config_file),
-                tmp_file: self.base.tmp_file.take(),
+                config_path: mem::take(&mut self.base.config_path),
+                tmp_config_file: self.base.tmp_config_file.take(),
                 name: mem::take(&mut self.base.name),
                 args: mem::take(&mut self.base.args),
                 working_dir: mem::take(&mut self.base.working_dir),
@@ -395,8 +395,8 @@ impl RunningTestHarness {
             .wrap_err("Failed to wait for process to exit")?;
         Ok(TerminatedTestHarness {
             base: TestBase {
-                config_file: mem::take(&mut self.base.config_file),
-                tmp_file: self.base.tmp_file.take(),
+                config_path: mem::take(&mut self.base.config_path),
+                tmp_config_file: self.base.tmp_config_file.take(),
                 name: mem::take(&mut self.base.name),
                 args: mem::take(&mut self.base.args),
                 working_dir: mem::take(&mut self.base.working_dir),
