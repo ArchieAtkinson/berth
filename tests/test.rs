@@ -6,9 +6,9 @@ use rand::{thread_rng, Rng};
 use rexpect::{
     process::wait::WaitStatus,
     session::{spawn_command, PtySession},
-    ReadUntil,
 };
 use std::{
+    collections::HashMap,
     env, fs, mem,
     path::{Path, PathBuf},
     process::Command,
@@ -73,30 +73,41 @@ struct TestBase {
     working_dir: Option<PathBuf>,
     envs: Vec<(String, String)>,
     command_string: String,
+    replacements: HashMap<String, String>,
 }
 
 impl TestBase {
     pub fn new() -> Self {
+        let name = Self::generate_random_environment_name();
+        let replacements = HashMap::from([("[name]".to_string(), name.clone())]);
+
         Self {
             config_file: PathBuf::new(),
             tmp_file: None,
-            name: Self::generate_random_environment_name(),
+            name,
             args: Vec::new(),
             working_dir: None,
             envs: Vec::new(),
             command_string: String::new(),
+            replacements,
         }
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config(&mut self, content: &str) -> Result<&mut Self> {
         let tmp_file =
             NamedTempFile::new().wrap_err("Failed to create temporary file for config")?;
         let path = tmp_file.path().to_path_buf();
+        self.replacements.insert(
+            "[config_path]".to_string(),
+            tmp_file.path().display().to_string(),
+        );
         self.tmp_file = Some(tmp_file);
         self.config_with_path(content, &path)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
         fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content))
@@ -105,15 +116,15 @@ impl TestBase {
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn args(&mut self, args: Vec<&str>) -> Result<&mut Self> {
         self.args = args
             .into_iter()
-            .map(|s| {
-                match s {
-                    "{name}" => self.name(),
-                    "{config_path}" => self.config_path(),
-                    _ => s,
+            .map(|arg| {
+                match self.replacements.get(arg) {
+                    Some(value) => value,
+                    None => arg,
                 }
                 .to_string()
             })
@@ -121,6 +132,7 @@ impl TestBase {
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> Result<&mut Self> {
         self.envs.extend(
@@ -131,6 +143,7 @@ impl TestBase {
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn working_dir(&mut self, working_dir: &str) -> Result<&mut Self> {
         let full_path = fs::canonicalize(working_dir)
@@ -146,6 +159,7 @@ impl TestBase {
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn create_command(&mut self) -> Result<Command> {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
@@ -226,6 +240,8 @@ impl Drop for TestBase {
     }
 }
 
+pub const APK_ADD_ARGS: &str = "-q --no-progress";
+
 pub struct TestHarness {
     base: TestBase,
 }
@@ -233,6 +249,7 @@ pub struct TestHarness {
 pub struct RunningTestHarness {
     base: TestBase,
     session: PtySession,
+    stdin: Vec<String>,
 }
 
 pub struct TerminatedTestHarness {
@@ -247,36 +264,42 @@ impl TestHarness {
         }
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config(mut self, content: &str) -> Result<Self> {
         self.base.config(content)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
         self.base.config_with_path(content, path)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
         self.base.args(args)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
         self.base.envs(envs)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
         self.base.working_dir(working_dir)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn run(mut self, timeout_ms: Option<u64>) -> Result<RunningTestHarness> {
         let command = self.base.create_command()?;
@@ -291,13 +314,13 @@ impl TestHarness {
                 working_dir: mem::take(&mut self.base.working_dir),
                 envs: mem::take(&mut self.base.envs),
                 command_string: mem::take(&mut self.base.command_string),
+                replacements: mem::take(&mut self.base.replacements),
             },
             session,
+            stdin: Vec::new(),
         })
     }
-}
 
-impl TestHarness {
     pub fn config_path(&self) -> &str {
         self.base.config_path()
     }
@@ -308,25 +331,63 @@ impl TestHarness {
 }
 
 impl RunningTestHarness {
+    #[must_use]
     #[track_caller]
     pub fn send_line(mut self, cmd: &str) -> Result<Self> {
         self.session
             .send_line(cmd)
             .wrap_err("Failed to send line")?;
+        let modified_cmd = format!("# {}", cmd);
+        self.stdin.push(modified_cmd);
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
-    pub fn expect_substring(mut self, expect: &str) -> Result<Self> {
-        self.session
-            .exp_any(vec![ReadUntil::String(expect.into())])
-            .wrap_err("Failed to expect a substring")?;
-        Ok(self)
+    pub fn stdio(mut self, expected: &str) -> Result<TerminatedTestHarness> {
+        let output_with_stdin_removed = self
+            .session
+            .exp_eof()
+            .wrap_err("Failed to get EOF")?
+            .lines()
+            .map(|line| strip_ansi_escapes::strip_str(line))
+            .filter(|line| !self.stdin.iter().any(|value| line.contains(value)))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let mut updated_expected = expected.to_string();
+        for (key, value) in &self.base.replacements {
+            updated_expected = updated_expected.replace(key, &value);
+        }
+        updated_expected = updated_expected.trim_end().to_string();
+
+        assert_eq!(output_with_stdin_removed, updated_expected);
+
+        let wait_status = self
+            .session
+            .process
+            .wait()
+            .wrap_err("Failed to wait for process to exit")?;
+
+        Ok(TerminatedTestHarness {
+            base: TestBase {
+                config_file: mem::take(&mut self.base.config_file),
+                tmp_file: self.base.tmp_file.take(),
+                name: mem::take(&mut self.base.name),
+                args: mem::take(&mut self.base.args),
+                working_dir: mem::take(&mut self.base.working_dir),
+                envs: mem::take(&mut self.base.envs),
+                command_string: mem::take(&mut self.base.command_string),
+                replacements: mem::take(&mut self.base.replacements),
+            },
+            wait_status,
+        })
     }
 
+    #[must_use]
     #[track_caller]
     pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
-        self.session.exp_eof().wrap_err("Failed to expect EOF")?;
+        self.session.exp_eof().wrap_err("Failed to get EOF")?;
         let wait_status = self
             .session
             .process
@@ -341,13 +402,12 @@ impl RunningTestHarness {
                 working_dir: mem::take(&mut self.base.working_dir),
                 envs: mem::take(&mut self.base.envs),
                 command_string: mem::take(&mut self.base.command_string),
+                replacements: mem::take(&mut self.base.replacements),
             },
             wait_status,
         })
     }
-}
 
-impl RunningTestHarness {
     pub fn config_path(&self) -> &str {
         self.base.config_path()
     }
@@ -358,6 +418,7 @@ impl RunningTestHarness {
 }
 
 impl TerminatedTestHarness {
+    #[must_use]
     #[track_caller]
     pub fn success(self) -> Result<()> {
         match self.wait_status {
@@ -367,6 +428,7 @@ impl TerminatedTestHarness {
         }
     }
 
+    #[must_use]
     #[track_caller]
     pub fn failure(self, expected_code: i32) -> Result<()> {
         match self.wait_status {
@@ -376,13 +438,15 @@ impl TerminatedTestHarness {
             v => Err(eyre!("Unexpected Process WaitStatus {:?}", v)),
         }
     }
-}
 
-impl TerminatedTestHarness {
+    #[must_use]
+    #[track_caller]
     pub fn config_path(&self) -> &str {
         self.base.config_path()
     }
 
+    #[must_use]
+    #[track_caller]
     pub fn name(&self) -> &str {
         self.base.name()
     }
@@ -405,18 +469,21 @@ impl TestOutput {
         }
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config(mut self, content: &str) -> Result<Self> {
         self.base.config(content)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
         self.base.config_with_path(content, path)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
         if !args.contains(&"--no-tty") {
@@ -428,36 +495,42 @@ impl TestOutput {
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
         self.base.envs(envs)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
         self.base.working_dir(working_dir)?;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn stdout(mut self, content: impl Into<String>) -> Result<Self> {
         self.stdout = content.into();
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn stderr(mut self, content: impl Into<String>) -> Result<Self> {
         self.stderr = content.into();
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn code(mut self, code: i32) -> Result<Self> {
         self.exit_code = code;
         Ok(self)
     }
 
+    #[must_use]
     #[track_caller]
     pub fn run(mut self) -> Result<()> {
         let output = self

@@ -119,8 +119,6 @@ impl Docker {
             .output()
             .unwrap();
 
-        info!("{}", String::from_utf8(output.stdout.clone()).unwrap());
-
         let command = format!("{} {}", container_engine_command, shell_words::join(args));
         let status_code = output.status.code();
         match status_code {

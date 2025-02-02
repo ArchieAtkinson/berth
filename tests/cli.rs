@@ -44,7 +44,7 @@ fn env_name_with_config_in_xdg_config_path() -> Result<()> {
             ),
             &file_path,
         )?
-        .args(vec!["--no-tty", "{name}"])?
+        .args(vec!["--no-tty", "[name]"])?
         .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])?
         .stdout(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
@@ -75,7 +75,7 @@ fn env_name_with_config_in_home_path() -> Result<()> {
             ),
             &file_path,
         )?
-        .args(vec!["--no-tty", "{name}"])?
+        .args(vec!["--no-tty", "[name]"])?
         .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])?
         .stdout(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
@@ -95,7 +95,7 @@ fn env_name_with_no_config_in_env() -> Result<()> {
             init_cmd = "/bin/ash"
             "#,
         ))?
-        .args(vec!["--no-tty", "{name}"])?
+        .args(vec!["--no-tty", "[name]"])?
         .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")?
         .code(1)?
         .run()
@@ -156,7 +156,7 @@ fn no_tty_prevents_interactive_terminal() -> Result<()> {
             init_cmd = "/bin/ash"
             "#,
         ))?
-        .args(vec!["--no-tty", "--config-path", "{config_path}", "{name}"])?
+        .args(vec!["--no-tty", "--config-path", "[config_path]", "[name]"])?
         .run(Some(5000))?
         .expect_terminate()?
         .success()

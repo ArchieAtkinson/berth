@@ -2,6 +2,7 @@ use color_eyre::Result;
 use indoc::{formatdoc, indoc};
 use std::{fs::File, io::Write, process::Command};
 use tempfile::TempDir;
+use test::APK_ADD_ARGS;
 
 pub mod test;
 use crate::test::TestHarness;
@@ -29,21 +30,19 @@ fn mount() -> Result<()> {
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
         ))?
-        .args(vec![
-            "--cleanup",
-            "--config-path",
-            "{config_path}",
-            "{name}",
-        ])?
-        .run(Some(5000))?
-        .expect_substring("/ #")?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
+        .run(Some(2500))?
         .send_line(&format!(
             "cat {}/{}",
             container_mount_dir, mounted_file_name
         ))?
-        .expect_substring(file_text)?
         .send_line("exit")?
-        .expect_terminate()?
+        .stdio(&formatdoc!(
+            r#"
+            Using config file at "[config_path]"
+            {file_text}
+            "#
+        ))?
         .success()?;
 
     tmp_dir.close().unwrap();
@@ -53,25 +52,29 @@ fn mount() -> Result<()> {
 #[test]
 fn exec_cmds() -> Result<()> {
     TestHarness::new()
-        .config(indoc!(
+        .config(&formatdoc!(
             r#"
             image = "alpine:edge"
-            exec_cmds = ["apk add helix"]
+            exec_cmds = ["apk add {} asciiquarium"]
             init_cmd = "/bin/ash"    
-            "#
+            "#,
+            APK_ADD_ARGS
         ))?
         .args(vec![
             "--cleanup",
             "--config-path",
-            "{config_path}",
-            "{name}",
+            "[config_path]",
+            "[name]",
         ])?
         .run(Some(5000))?
-        .expect_substring("/ #")?
-        .send_line("which hx")?
-        .expect_substring("/usr/bin/hx")?
+        .send_line("which asciiquarium")?
         .send_line("exit")?
-        .expect_terminate()?
+        .stdio(&indoc!(
+            r#"
+            Using config file at "[config_path]"
+            /usr/bin/asciiquarium
+            "#
+        ))?
         .success()
 }
 
@@ -102,16 +105,20 @@ fn mount_working_dir() -> Result<()> {
         .args(vec![
             "--cleanup",
             "--config-path",
-            "{config_path}",
-            "{name}",
+            "[config_path]",
+            "[name]",
         ])?
         .run(Some(2500))?
-        .expect_substring(&format!("{} #", container_mount_dir))?
-        .send_line("pwd && ls")?
+        .send_line("pwd")?
         .send_line(&format!("cat {}", mounted_file_name))?
-        .expect_substring(file_text)?
         .send_line("exit")?
-        .expect_terminate()?
+        .stdio(&formatdoc!(
+            r#"
+            Using config file at "[config_path]"
+            {container_mount_dir}
+            {file_text}   
+            "#
+        ))?
         .success()?;
 
     tmp_dir.close().unwrap();
@@ -143,12 +150,15 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             init_cmd = "/bin/ash"
             "#,
         ))?
-        .args(vec!["--config-path", "{config_path}", "{name}"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(Some(2500))?
-        .expect_substring("/ #")?;
+        .send_line("echo $0")?;
 
     let container_name = harness.name().to_string();
 
+    // As we don't expect any value in harness, the container won't
+    // have started if we don't sleep before checking
+    std::thread::sleep(std::time::Duration::from_millis(2000));
     assert!(is_container_running(&container_name));
 
     TestHarness::new()
@@ -158,14 +168,28 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             &container_name,
         ])?
         .run(Some(2500))?
-        .expect_substring("/ #")?
+        .send_line("echo $0")?
         .send_line("exit")?
-        .expect_terminate()?
+        .stdio(&formatdoc!(
+            r#"
+            Using config file at "{}"
+            /bin/ash
+            "#,
+            harness.config_path()
+        ))?
         .success()?;
 
     assert!(is_container_running(&container_name));
 
-    harness.send_line("exit")?.expect_terminate()?.success()?;
+    harness
+        .send_line("exit")?
+        .stdio(&indoc!(
+            r#"
+            Using config file at "[config_path]"
+            /bin/ash
+            "#,
+        ))?
+        .success()?;
 
     assert!(!is_container_running(&container_name));
     Ok(())
