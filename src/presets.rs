@@ -46,14 +46,14 @@ impl Preset {
         envs.into_iter()
             .map(|(name, mut env)| {
                 env.name = name.clone();
-                env.mounts = env.mounts.map(|mounts| Self::expand_mounts(mounts));
+                env.mounts = env.mounts.map(|mounts| Self::expand_env_vars(mounts));
 
                 (name, env)
             })
             .collect()
     }
 
-    fn expand_mounts(mounts: Vec<String>) -> Vec<String> {
+    fn expand_env_vars(mounts: Vec<String>) -> Vec<String> {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 

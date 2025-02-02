@@ -249,7 +249,6 @@ pub struct TestHarness {
 pub struct RunningTestHarness {
     base: TestBase,
     session: PtySession,
-    stdin: Vec<String>,
 }
 
 pub struct TerminatedTestHarness {
@@ -317,7 +316,6 @@ impl TestHarness {
                 replacements: mem::take(&mut self.base.replacements),
             },
             session,
-            stdin: Vec::new(),
         })
     }
 
@@ -337,21 +335,18 @@ impl RunningTestHarness {
         self.session
             .send_line(cmd)
             .wrap_err("Failed to send line")?;
-        let modified_cmd = format!("# {}", cmd);
-        self.stdin.push(modified_cmd);
         Ok(self)
     }
 
     #[must_use]
     #[track_caller]
     pub fn stdio(mut self, expected: &str) -> Result<TerminatedTestHarness> {
-        let output_with_stdin_removed = self
+        let output_stripped = self
             .session
             .exp_eof()
             .wrap_err("Failed to get EOF")?
             .lines()
             .map(|line| strip_ansi_escapes::strip_str(line))
-            .filter(|line| !self.stdin.iter().any(|value| line.contains(value)))
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -361,7 +356,7 @@ impl RunningTestHarness {
         }
         updated_expected = updated_expected.trim_end().to_string();
 
-        assert_eq!(output_with_stdin_removed, updated_expected);
+        assert_eq!(output_stripped, updated_expected);
 
         let wait_status = self
             .session

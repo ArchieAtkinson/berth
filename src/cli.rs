@@ -18,21 +18,23 @@ pub enum CliError {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "A simple CLI for managing containerised development environments")]
+#[command(
+    about = "berth is a CLI that lets you let you create development environments without touching repository code"
+)]
 struct Cli {
     /// Path to config file
     #[arg(long, value_name = "FILE")]
     pub config_path: Option<PathBuf>,
 
-    /// Deletes container on exit, useful for testing
+    /// Deletes container on exit
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    /// Disable TTY, useful for testing
+    /// Disable TTY and interaction with container
     #[arg(long, default_value_t = false)]
     pub no_tty: bool,
 
-    /// The environment from your config file to start
+    /// The environment from your config file to use
     pub env_name: String,
 }
 

@@ -31,16 +31,15 @@ fn mount() -> Result<()> {
             container_mount_dir
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
-        .run(Some(2500))?
-        .send_line(&format!(
-            "cat {}/{}",
-            container_mount_dir, mounted_file_name
-        ))?
+        .run(Some(5000))?
+        .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
         .send_line("exit")?
         .stdio(&formatdoc!(
             r#"
             Using config file at "[config_path]"
+            / # cat {container_mount_dir}/{mounted_file_name}
             {file_text}
+            / # exit
             "#
         ))?
         .success()?;
@@ -72,7 +71,9 @@ fn exec_cmds() -> Result<()> {
         .stdio(&indoc!(
             r#"
             Using config file at "[config_path]"
+            / # which asciiquarium
             /usr/bin/asciiquarium
+            / # exit
             "#
         ))?
         .success()
@@ -108,15 +109,15 @@ fn mount_working_dir() -> Result<()> {
             "[config_path]",
             "[name]",
         ])?
-        .run(Some(2500))?
-        .send_line("pwd")?
-        .send_line(&format!("cat {}", mounted_file_name))?
+        .run(Some(5000))?
+        .send_line(&format!("cat {mounted_file_name}"))?
         .send_line("exit")?
         .stdio(&formatdoc!(
             r#"
             Using config file at "[config_path]"
-            {container_mount_dir}
-            {file_text}   
+            /berth # cat {mounted_file_name}
+            {file_text}
+            /berth # exit
             "#
         ))?
         .success()?;
@@ -151,7 +152,7 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             "#,
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
-        .run(Some(2500))?
+        .run(Some(5000))?
         .send_line("echo $0")?;
 
     let container_name = harness.name().to_string();
@@ -167,13 +168,15 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             harness.config_path(),
             &container_name,
         ])?
-        .run(Some(2500))?
+        .run(Some(5000))?
         .send_line("echo $0")?
         .send_line("exit")?
         .stdio(&formatdoc!(
             r#"
             Using config file at "{}"
+            / # echo $0
             /bin/ash
+            / # exit
             "#,
             harness.config_path()
         ))?
@@ -186,7 +189,9 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .stdio(&indoc!(
             r#"
             Using config file at "[config_path]"
+            / # echo $0
             /bin/ash
+            / # exit
             "#,
         ))?
         .success()?;

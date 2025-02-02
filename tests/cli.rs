@@ -46,7 +46,7 @@ fn env_name_with_config_in_xdg_config_path() -> Result<()> {
         )?
         .args(vec!["--no-tty", "[name]"])?
         .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])?
-        .stdout(format!("Using config file at {:?}\n", file_path))?
+        .stderr(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
         .run()?;
 
@@ -77,7 +77,7 @@ fn env_name_with_config_in_home_path() -> Result<()> {
         )?
         .args(vec!["--no-tty", "[name]"])?
         .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])?
-        .stdout(format!("Using config file at {:?}\n", file_path))?
+        .stderr(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
         .run()?;
 

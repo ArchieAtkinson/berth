@@ -7,14 +7,18 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
-    #[error("The following command failed:\n {cmd}\nWith:\n{stderr}")]
-    CommandFailed { cmd: String, stderr: String },
+    #[error("The following command return an error code:\n {cmd}\nWith:\n{stderr}")]
+    CommandErrorCode { cmd: String, stderr: String },
 
     #[error("The following command failed:\n {cmd}\nDue to an unknown signal")]
     CommandKilled { cmd: String },
+
+    #[error("The following command failed to run:\n {cmd}")]
+    CommandFailed { cmd: String },
 }
 
-const ENVIRONMENT_PREFIX: &str = "berth-";
+const CONTAINER_PREFIX: &str = "berth-";
+const CONTAINER_ENGINE: &str = "docker";
 
 pub struct Docker {
     env: Env,
@@ -25,12 +29,7 @@ impl Docker {
     pub fn new(mut env: Env, no_tty: bool) -> Self {
         let mut hasher = DefaultHasher::new();
         env.hash(&mut hasher);
-        env.name = format!(
-            "{}{}-{:016x}",
-            ENVIRONMENT_PREFIX,
-            env.name,
-            hasher.finish()
-        );
+        env.name = format!("{}{}-{:016x}", CONTAINER_PREFIX, env.name, hasher.finish());
         Docker { env, no_tty }
     }
 
@@ -57,9 +56,13 @@ impl Docker {
 
         enter_args.extend_from_slice(&[&self.env.name, &self.env.init_cmd]);
 
-        info!("docker {}", shell_words::join(&enter_args));
+        let command = format!("{CONTAINER_ENGINE} {}", shell_words::join(&enter_args));
+        info!("{command}");
 
-        Command::new("docker").args(&enter_args).status().unwrap();
+        Command::new(CONTAINER_ENGINE)
+            .args(&enter_args)
+            .status()
+            .map_err(|_| DockerError::CommandFailed { cmd: command })?;
 
         if !self.is_anyone_connected()? {
             self.stop_container()?;
@@ -113,13 +116,16 @@ impl Docker {
     }
 
     fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output, DockerError> {
-        let container_engine_command = "docker";
-        let output = Command::new(container_engine_command)
+        let command = format!("{} {}", CONTAINER_ENGINE, shell_words::join(&args));
+        info!("{command}");
+
+        let output = Command::new(CONTAINER_ENGINE)
             .args(&args)
             .output()
-            .unwrap();
+            .map_err(|_| DockerError::CommandFailed {
+                cmd: command.clone(),
+            })?;
 
-        let command = format!("{} {}", container_engine_command, shell_words::join(args));
         let status_code = output.status.code();
         match status_code {
             None => {
@@ -128,7 +134,7 @@ impl Docker {
             }
             Some(0) => (),
             Some(_n) => {
-                let err = DockerError::CommandFailed {
+                let err = DockerError::CommandErrorCode {
                     cmd: command,
                     stderr: String::from_utf8(output.stderr.clone()).unwrap(),
                 };
