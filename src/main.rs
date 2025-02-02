@@ -1,9 +1,11 @@
 use std::process::exit;
+use std::time::Duration;
 
 use berth::errors::AppError;
 use berth::presets::Env;
 use berth::{cli::AppConfig, docker::Docker, presets::Preset};
 
+use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
@@ -49,12 +51,25 @@ fn run() -> Result<(), AppError> {
 
     let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
 
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["", ".", "..", "...", " "])
+            .template("{msg}{spinner}")
+            .unwrap(),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(100));
+
+    spinner.set_message("Starting Environment");
+
     let docker = Docker::new(env, app_config.no_tty);
     if !docker.does_environment_exist()? {
         docker.create_new_environment()?;
     } else {
         docker.start_container()?;
     }
+
+    spinner.finish_with_message("Entering Environment");
 
     docker.enter_environment()?;
 

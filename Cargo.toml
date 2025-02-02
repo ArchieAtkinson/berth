@@ -18,6 +18,7 @@ envmnt = "0.10"
 shell-words = "1.1"
 thiserror = "2"
 regex = "1.11"
+indicatif = "0.17"
 
 [dev-dependencies]
 ctor = "0.2"

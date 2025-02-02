@@ -42,7 +42,7 @@ need_stdout = false
 # - a specific test: bacon test -- config::test_default_files
 # - the tests of a package: bacon test -- -- -p config
 [jobs.test]
-command = ["cargo", "test", "--no-fail-fast"]
+command = ["cargo", "test" ]
 need_stdout = true
 
 [jobs.nextest]
