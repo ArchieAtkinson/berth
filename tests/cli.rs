@@ -1,6 +1,6 @@
 use berth::cli::AppConfig;
 use color_eyre::Result;
-use indoc::{formatdoc, indoc};
+use indoc::indoc;
 use pretty_assertions::assert_eq;
 use std::{
     fs::{self},
@@ -153,15 +153,14 @@ fn no_tty_prevents_interactive_terminal() -> Result<()> {
         .config(&indoc!(
             r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
+             init_cmd = "echo hello"
             "#,
         ))?
         .args(vec!["--no-tty", "--config-path", "[config_path]", "[name]"])?
         .run(5000)?
-        .stdio(&formatdoc!(
-            r#"
-            Using config file at "[config_path]"
-            "#
-        ))?
-        .success()
+        .expect_string("hello")?
+        .expect_terminate()?
+        .success()?;
+
+    Ok(())
 }

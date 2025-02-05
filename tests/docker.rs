@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use indoc::{formatdoc, indoc};
+use indoc::formatdoc;
 use std::{fs::File, io::Write, process::Command};
 use tempfile::TempDir;
 use test::APK_ADD_ARGS;
@@ -33,15 +33,9 @@ fn mount() -> Result<()> {
         .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(5000)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
+        .expect_string(&format!("{file_text}"))?
         .send_line("exit")?
-        .stdio(&formatdoc!(
-            r#"
-            Using config file at "[config_path]"
-            / # cat {container_mount_dir}/{mounted_file_name}
-            {file_text}
-            / # exit
-            "#
-        ))?
+        .expect_terminate()?
         .success()?;
 
     tmp_dir.close().unwrap();
@@ -67,15 +61,9 @@ fn exec_cmds() -> Result<()> {
         ])?
         .run(5000)?
         .send_line("which asciiquarium")?
+        .expect_string("/usr/bin/asciiquarium")?
         .send_line("exit")?
-        .stdio(&indoc!(
-            r#"
-            Using config file at "[config_path]"
-            / # which asciiquarium
-            /usr/bin/asciiquarium
-            / # exit
-            "#
-        ))?
+        .expect_terminate()?
         .success()
 }
 
@@ -111,15 +99,9 @@ fn mount_working_dir() -> Result<()> {
         ])?
         .run(5000)?
         .send_line(&format!("cat {mounted_file_name}"))?
+        .expect_string(&format!("{file_text}"))?
         .send_line("exit")?
-        .stdio(&formatdoc!(
-            r#"
-            Using config file at "[config_path]"
-            /berth # cat {mounted_file_name}
-            {file_text}
-            /berth # exit
-            "#
-        ))?
+        .expect_terminate()?
         .success()?;
 
     tmp_dir.close().unwrap();
@@ -170,30 +152,18 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         ])?
         .run(5000)?
         .send_line("echo $0")?
+        .expect_string("/bin/ash")?
         .send_line("exit")?
-        .stdio(&formatdoc!(
-            r#"
-            Using config file at "{}"
-            / # echo $0
-            /bin/ash
-            / # exit
-            "#,
-            harness.config_path()
-        ))?
+        .expect_terminate()?
         .success()?;
 
     assert!(is_container_running(&container_name));
 
     harness
+        .send_line("echo $0")?
+        .expect_string("/bin/ash")?
         .send_line("exit")?
-        .stdio(&indoc!(
-            r#"
-            Using config file at "[config_path]"
-            / # echo $0
-            /bin/ash
-            / # exit
-            "#,
-        ))?
+        .expect_terminate()?
         .success()?;
 
     assert!(!is_container_running(&container_name));
