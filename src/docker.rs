@@ -1,12 +1,35 @@
 use crate::presets::Env;
+use bollard::{
+    container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
+    Docker,
+};
 use log::info;
 use std::{
+    collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     process::{Command, Output},
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
+    #[error("Failed to conntect to docker daemon:\n {:?}", error)]
+    ConnectingToDaemon { error: bollard::errors::Error },
+
+    #[error("Failed to list containers:\n {:?}", error)]
+    ListingContainers { error: bollard::errors::Error },
+
+    #[error("Failed to remove container:\n {:?}", error)]
+    RemovingContainer { error: bollard::errors::Error },
+
+    #[error("Failed to start container:\n {:?}", error)]
+    StartingContainer { error: bollard::errors::Error },
+
+    #[error("Failed to stop container:\n {:?}", error)]
+    StoppingContainer { error: bollard::errors::Error },
+
+    #[error("Entering container failed: {reason}")]
+    EnterExecFailure { reason: String },
+
     #[error("The following command return an error code:\n {cmd}\nWith:\n{stderr}")]
     CommandErrorCode { cmd: String, stderr: String },
 
@@ -17,79 +40,126 @@ pub enum DockerError {
     CommandFailed { cmd: String },
 }
 
+macro_rules! docker_err {
+    ($variant:ident) => {
+        |error| DockerError::$variant { error }
+    };
+}
+
 const CONTAINER_PREFIX: &str = "berth-";
 const CONTAINER_ENGINE: &str = "docker";
 
-pub struct Docker {
+pub struct ContainerEngine {
     env: Env,
     no_tty: bool,
+    docker: Docker,
 }
 
-impl Docker {
-    pub fn new(mut env: Env, no_tty: bool) -> Self {
+impl ContainerEngine {
+    pub fn new(mut env: Env, no_tty: bool) -> Result<Self, DockerError> {
         let mut hasher = DefaultHasher::new();
         env.hash(&mut hasher);
         env.name = format!("{}{}-{:016x}", CONTAINER_PREFIX, env.name, hasher.finish());
-        Docker { env, no_tty }
+        Ok(ContainerEngine {
+            env,
+            no_tty,
+            docker: Docker::connect_with_local_defaults()
+                .map_err(docker_err!(ConnectingToDaemon))?,
+        })
     }
 
-    pub fn create_new_environment(&self) -> Result<(), DockerError> {
-        self.delete_container_if_exists()?;
+    pub async fn create_new_environment(&self) -> Result<(), DockerError> {
+        self.delete_container_if_exists().await?;
         self.create_container()?;
-        self.start_container()?;
+        self.start_container().await?;
         self.exec_setup_commands()
     }
 
-    pub fn enter_environment(&self) -> Result<(), DockerError> {
+    pub async fn enter_environment(&self) -> Result<(), DockerError> {
         let mut enter_args = vec!["exec"];
         if !self.no_tty {
             enter_args.push("-it");
         }
 
         if let Some(user) = &self.env.user {
-            enter_args.extend_from_slice(&["-u", user]);
+            enter_args.extend(["-u", user]);
         }
 
         if let Some(entry_dir) = &self.env.entry_dir {
-            enter_args.extend_from_slice(&["-w", entry_dir]);
+            enter_args.extend(["-w", entry_dir]);
         }
 
-        enter_args.extend_from_slice(&[&self.env.name, &self.env.init_cmd]);
+        enter_args.push(&self.env.name);
+
+        let init_cmd = shell_words::split(&self.env.init_cmd).unwrap();
+        enter_args.extend_from_slice(&init_cmd.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
         let command = format!("{CONTAINER_ENGINE} {}", shell_words::join(&enter_args));
+
         info!("{command}");
 
-        Command::new(CONTAINER_ENGINE)
+        let exit_code = Command::new(CONTAINER_ENGINE)
             .args(&enter_args)
             .status()
-            .map_err(|_| DockerError::CommandFailed { cmd: command })?;
+            .map_err(|_| DockerError::CommandFailed { cmd: command })?
+            .code();
 
-        if !self.is_anyone_connected()? {
-            self.stop_container()?;
+        let error_str = match exit_code {
+            Some(0) => None,
+            Some(125) => Some("Docker exec failed to run"),
+            Some(126) => Some("Command cannot execute"),
+            Some(127) => Some("Command not found"),
+            Some(130) => None, // Interrupt from Ctrl+C
+            Some(_) => None,
+            None => Some("Container was exited by siginal"),
+        };
+
+        if let Some(error_str) = error_str {
+            return Err(DockerError::EnterExecFailure {
+                reason: error_str.to_string(),
+            });
+        }
+
+        if !self.is_anyone_connected().await? {
+            self.stop_container().await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn does_environment_exist(&self) -> Result<bool, DockerError> {
+        let mut filters = HashMap::new();
+        filters.insert("name", vec![self.env.name.as_str()]);
+        let options = Some(ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        });
+        let container_list = self
+            .docker
+            .list_containers(options)
+            .await
+            .map_err(docker_err!(ListingContainers))?;
+
+        Ok(!container_list.is_empty())
+    }
+
+    pub async fn delete_container_if_exists(&self) -> Result<(), DockerError> {
+        if self.does_environment_exist().await? {
+            self.docker
+                .remove_container(&self.env.name, None)
+                .await
+                .map_err(docker_err!(StoppingContainer))?;
         }
         Ok(())
     }
 
-    pub fn does_environment_exist(&self) -> Result<bool, DockerError> {
-        let filter = format!("name={}", &self.env.name);
-        let ls_args = vec!["container", "ls", "-a", "--quiet", "--filter", &filter];
-
-        let ls_output = Self::run_docker_command_with_output(ls_args)?;
-
-        Ok(!ls_output.stdout.is_empty())
-    }
-
-    pub fn delete_container_if_exists(&self) -> Result<(), DockerError> {
-        if self.does_environment_exist()? {
-            let rm_args = vec!["container", "rm", &self.env.name];
-            Self::run_docker_command(rm_args)?;
-        }
+    pub async fn start_container(&self) -> Result<(), DockerError> {
+        self.docker
+            .start_container(&self.env.name, None::<StartContainerOptions<String>>)
+            .await
+            .map_err(docker_err!(StartingContainer))?;
         Ok(())
-    }
-
-    pub fn start_container(&self) -> Result<(), DockerError> {
-        let start_args = vec!["start", &self.env.name];
-        Self::run_docker_command(start_args)
     }
 
     fn create_container(&self) -> Result<(), DockerError> {
@@ -112,7 +182,25 @@ impl Docker {
                 Self::run_docker_command(exec_args)?;
             }
         }
+
         Ok(())
+    }
+
+    pub async fn stop_container(&self) -> Result<(), DockerError> {
+        self.docker
+            .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
+            .await
+            .map_err(docker_err!(StoppingContainer))?;
+        Ok(())
+    }
+
+    async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
+        let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
+        let output = Self::run_docker_command_with_output(args)?;
+        let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
+
+        let no_connections_ps_count = 2;
+        Ok(ps_count > no_connections_ps_count)
     }
 
     fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output, DockerError> {
@@ -146,18 +234,5 @@ impl Docker {
 
     fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
         Self::run_docker_command_with_output(args).map(|_| ())
-    }
-
-    fn stop_container(&self) -> Result<(), DockerError> {
-        Self::run_docker_command(vec!["stop", "-t", "0", &self.env.name])
-    }
-
-    fn is_anyone_connected(&self) -> Result<bool, DockerError> {
-        let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
-        let output = Self::run_docker_command_with_output(args)?;
-        let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
-
-        let no_connections_ps_count = 2;
-        Ok(ps_count > no_connections_ps_count)
     }
 }

@@ -2,7 +2,7 @@ use std::process::exit;
 
 use berth::errors::AppError;
 use berth::presets::Env;
-use berth::{cli::AppConfig, docker::Docker, presets::Preset};
+use berth::{cli::AppConfig, docker::ContainerEngine, presets::Preset};
 
 use log::info;
 use log4rs::append::file::FileAppender;
@@ -36,7 +36,7 @@ fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, Ap
     }
 }
 
-fn run() -> Result<(), AppError> {
+async fn run() -> Result<(), AppError> {
     let args = std::env::args_os();
     let app_config = AppConfig::new(args)?;
 
@@ -47,29 +47,39 @@ fn run() -> Result<(), AppError> {
     let mut preset = Preset::new(&config_content)?;
 
     let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
+    let docker = ContainerEngine::new(env, app_config.no_tty)?;
+    let result = {
+        if !docker.does_environment_exist().await? {
+            docker.create_new_environment().await?;
+        } else {
+            docker.start_container().await?;
+        }
 
-    let docker = Docker::new(env, app_config.no_tty);
-    if !docker.does_environment_exist()? {
-        docker.create_new_environment()?;
-    } else {
-        docker.start_container()?;
-    }
+        docker.enter_environment().await
+    };
 
-    docker.enter_environment()?;
+    match result {
+        Ok(_) => Ok::<(), AppError>(()),
+        Err(e) => {
+            docker.stop_container().await?;
+            return Err(berth::errors::AppError::Docker(e));
+        }
+    }?;
 
     if app_config.cleanup {
-        docker.delete_container_if_exists()?;
+        docker.delete_container_if_exists().await?;
     }
 
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     init_logger().expect("Failed to setup logger");
 
     info!("Start up");
 
-    match run() {
+    match run().await {
         Ok(()) => (),
         Err(e) => {
             eprintln!("{}", e);

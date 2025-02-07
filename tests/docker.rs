@@ -1,11 +1,22 @@
+use bollard::{container::ListContainersOptions, Docker};
 use color_eyre::Result;
 use indoc::formatdoc;
-use std::{fs::File, io::Write, process::Command};
+use std::{collections::HashMap, fs::File, io::Write};
 use tempfile::TempDir;
 use test::APK_ADD_ARGS;
 
 pub mod test;
 use crate::test::TestHarness;
+
+async fn is_container_running(docker: &Docker, name: &str) -> bool {
+    let mut filters = HashMap::new();
+    filters.insert("name", vec![name]);
+    let options = Some(ListContainersOptions {
+        filters,
+        ..Default::default()
+    });
+    !docker.list_containers(options).await.unwrap().is_empty()
+}
 
 #[test]
 fn mount() -> Result<()> {
@@ -108,23 +119,9 @@ fn mount_working_dir() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn keep_container_running_if_one_terminal_exits() -> Result<()> {
-    let is_container_running = |name: &str| {
-        let name_filter = format!("name={}", name);
-        let mut ls_cmd = Command::new("docker");
-        ls_cmd.args([
-            "container",
-            "ls",
-            "--format",
-            "{{.Names}}",
-            "--filter",
-            &name_filter,
-        ]);
-
-        let running_containers = String::from_utf8(ls_cmd.output().unwrap().stdout).unwrap();
-        running_containers.contains(name)
-    };
+#[tokio::test]
+async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
+    let docker = Docker::connect_with_local_defaults().unwrap();
 
     let harness = TestHarness::new()
         .config(&formatdoc!(
@@ -135,14 +132,12 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(5000)?
-        .send_line("echo $0")?;
+        .send_line("echo $0")?
+        .expect_string("/bin/ash")?;
 
     let container_name = harness.name().to_string();
 
-    // As we don't expect any value in harness, the container won't
-    // have started if we don't sleep before checking
-    std::thread::sleep(std::time::Duration::from_millis(2000));
-    assert!(is_container_running(&container_name));
+    assert!(is_container_running(&docker, &container_name).await);
 
     TestHarness::new()
         .args(vec![
@@ -157,7 +152,7 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .expect_terminate()?
         .success()?;
 
-    assert!(is_container_running(&container_name));
+    assert!(is_container_running(&docker, &container_name).await);
 
     harness
         .send_line("echo $0")?
@@ -166,6 +161,6 @@ fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .expect_terminate()?
         .success()?;
 
-    assert!(!is_container_running(&container_name));
+    assert!(!is_container_running(&docker, &container_name).await);
     Ok(())
 }

@@ -348,85 +348,15 @@ impl RunningTestHarness {
             parsed_expected = parsed_expected.replace(key, &value);
         }
 
-        match self.session.expect(&parsed_expected) {
-            Ok(_) => (),
-            Err(expectrl::Error::ExpectTimeout) => {
-                let debug_output = format!("{:?}", self.session);
-                if let Some(start) = debug_output.find("buffer: [") {
-                    if let Some(end) = debug_output[start..].find("]") {
-                        let numbers = debug_output[start + 8..start + end]
-                            .split(", ")
-                            .filter_map(|n| n.parse::<u8>().ok())
-                            .collect::<Vec<u8>>();
-
-                        let stripped = strip_ansi_escapes::strip(&numbers);
-                        let output = String::from_utf8(stripped).unwrap();
-                        panic!("Timeout Reached, Unexpected output:\n{}", output);
-                    }
-                    panic!("Timeout Reached, couldn't extract buffer");
-                }
-            }
-            Err(e) => return Err(e).wrap_err("Failed to expect string"),
-        }
+        self.expect(parsed_expected)?;
 
         Ok(self)
     }
 
     #[must_use]
     #[track_caller]
-    pub fn stdio(mut self, expected: &str) -> Result<TerminatedTestHarness> {
-        let mut output_stripped = String::new();
-        self.session
-            .read_to_string(&mut output_stripped)
-            .wrap_err("Failed to get EOF")?;
-
-        output_stripped = output_stripped
-            .lines()
-            .map(|line| strip_ansi_escapes::strip_str(line))
-            .collect::<Vec<String>>()
-            .join("\n")
-            .trim_end()
-            .to_string();
-
-        let mut updated_expected = expected.to_string();
-        for (key, value) in &self.base.replacements {
-            updated_expected = updated_expected.replace(key, &value);
-        }
-        updated_expected = updated_expected.trim_end().to_string();
-
-        assert_eq!(
-            output_stripped, updated_expected,
-            "\n\n {:?} \n\n {:?}",
-            output_stripped, updated_expected
-        );
-
-        let wait_status = self
-            .session
-            .get_process()
-            .wait()
-            .wrap_err("Failed to wait for process to exit")?;
-
-        Ok(TerminatedTestHarness {
-            base: TestBase {
-                config_path: mem::take(&mut self.base.config_path),
-                tmp_config_file: self.base.tmp_config_file.take(),
-                name: mem::take(&mut self.base.name),
-                args: mem::take(&mut self.base.args),
-                working_dir: mem::take(&mut self.base.working_dir),
-                envs: mem::take(&mut self.base.envs),
-                command_string: mem::take(&mut self.base.command_string),
-                replacements: mem::take(&mut self.base.replacements),
-            },
-            wait_status,
-        })
-    }
-
-    #[must_use]
-    #[track_caller]
     pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
-        self.session
-            .expect(expectrl::Eof)
-            .wrap_err("Failed to get EOF")?;
+        self.expect(&expectrl::Eof)?;
 
         let wait_status = self
             .session
@@ -454,6 +384,35 @@ impl RunningTestHarness {
 
     pub fn name(&self) -> &str {
         self.base.name()
+    }
+
+    fn expect<T: expectrl::Needle>(&mut self, expected: T) -> Result<()> {
+        match self.session.expect(expected) {
+            Ok(_) => (),
+            Err(expectrl::Error::ExpectTimeout) => {
+                let mut buf = [0; 1024];
+                let mut buf_all = Vec::new();
+                while let Ok(n) = self.session.try_read(&mut buf) {
+                    buf_all.extend(&buf[..n]);
+                }
+
+                let string = String::from_utf8_lossy(&buf_all);
+
+                panic!("Timeout Reached, Unexpected output:\n{}", string);
+            }
+            Err(expectrl::Error::Eof) => {
+                let mut buf = String::new();
+                let _ = self
+                    .session
+                    .read_to_string(&mut buf)
+                    .wrap_err("Failed to read buf");
+                panic!("Eof Reached, Unexpected output:\n{}", buf);
+            }
+
+            Err(e) => return Err(e).wrap_err("Failed to expect"),
+        }
+
+        Ok(())
     }
 }
 

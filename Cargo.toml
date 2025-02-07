@@ -18,6 +18,11 @@ shell-words = "1.1"
 thiserror = "2"
 regex = "1.11"
 indicatif = "0.17"
+bollard = "0.18"
+tokio = { version = "1.43", features = ["rt-multi-thread", "io-std", "time", "macros"] }
+futures-util = "0.3"
+tokio-util = "0.7"
+
 
 [dev-dependencies]
 ctor = "0.2"
