@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -19,7 +19,7 @@ pub enum CliError {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "berth is a CLI that lets you let you create development environments without touching repository code"
+    about = "berth, A CLI to help create development environments without touching repository code"
 )]
 struct Cli {
     /// Path to config file
@@ -30,13 +30,28 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    /// The environment from your config file to use
-    pub env_name: String,
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq)]
+pub enum Commands {
+    /// Start an environment (and build it if it doesn't exist)
+    Up {
+        /// The environment from your config file to use
+        env: String,
+    },
+
+    /// Build/rebuild an environment
+    Build {
+        /// The environment from your config file to use
+        env: String,
+    },
 }
 
 pub struct AppConfig {
     pub config_path: PathBuf,
-    pub env_name: String,
+    pub command: Commands,
     pub cleanup: bool,
 }
 
@@ -57,7 +72,7 @@ impl AppConfig {
 
         Ok(AppConfig {
             config_path: Self::set_config_path(cli.config_path)?,
-            env_name: cli.env_name,
+            command: cli.command,
             cleanup: cli.cleanup,
         })
     }

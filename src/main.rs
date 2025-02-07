@@ -1,5 +1,6 @@
 use std::process::exit;
 
+use berth::cli;
 use berth::errors::AppError;
 use berth::presets::Env;
 use berth::{cli::AppConfig, docker::ContainerEngine, presets::Preset};
@@ -36,6 +37,22 @@ fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, Ap
     }
 }
 
+async fn build(docker: &ContainerEngine) -> Result<(), AppError> {
+    docker.create_new_environment().await?;
+    Ok(())
+}
+
+async fn up(docker: &ContainerEngine) -> Result<(), AppError> {
+    if !docker.does_environment_exist().await? {
+        build(docker).await?;
+    } else {
+        docker.start_container().await?;
+    }
+    docker.enter_environment().await?;
+
+    Ok(())
+}
+
 async fn run() -> Result<(), AppError> {
     let args = std::env::args_os();
     let app_config = AppConfig::new(args)?;
@@ -46,23 +63,26 @@ async fn run() -> Result<(), AppError> {
         std::fs::read_to_string(app_config.config_path).expect("Failed to read config file");
     let mut preset = Preset::new(&config_content)?;
 
-    let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
-    let docker = ContainerEngine::new(env)?;
-    let result = {
-        if !docker.does_environment_exist().await? {
-            docker.create_new_environment().await?;
-        } else {
-            docker.start_container().await?;
-        }
+    let name = match &app_config.command {
+        cli::Commands::Up { env } => env,
+        cli::Commands::Build { env } => env,
+    };
 
-        docker.enter_environment().await
+    let env = find_environment_in_config(&mut preset, &name)?;
+    let docker = ContainerEngine::new(env)?;
+
+    let result = {
+        match &app_config.command {
+            cli::Commands::Up { env: _ } => up(&docker).await,
+            cli::Commands::Build { env: _ } => build(&docker).await,
+        }
     };
 
     match result {
         Ok(_) => Ok::<(), AppError>(()),
         Err(e) => {
             docker.stop_container().await?;
-            return Err(berth::errors::AppError::Docker(e));
+            return Err(e);
         }
     }?;
 

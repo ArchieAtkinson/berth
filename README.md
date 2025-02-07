@@ -14,12 +14,14 @@ Requires:
 ## Usage
 
 ```
-berth is a CLI that lets you let you create development environments without touching repository code
+berth, A CLI to help create development environments without touching repository code
 
-Usage: berth [OPTIONS] <ENV_NAME>
+Usage: berth [OPTIONS] <COMMAND>
 
-Arguments:
-  <ENV_NAME>  The environment from your config file to use
+Commands:
+  up     Start an environment (and build it if it doesn't exist)
+  build  Build/rebuild an environment
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
       --config-path <FILE>  Path to config file
@@ -27,7 +29,7 @@ Options:
   -h, --help                Print help
 ```
 
-To use `berth`, simply create a configuration file with an environment for your application and run `berth <ENV_NAME>`. 
+To use `berth`, simply create a configuration file with an environment for your application and run `berth up <ENV_NAME>`. Rebuild your environment with `berth build <ENV_NAME>`, this is only required if the image updates, will automatilly rebuild if the configuration changes.  
 
 ## Configuration
 

@@ -42,7 +42,7 @@ fn mount() -> Result<()> {
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
         ))?
-        .args(vec!["--config-path", "[config_path]", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(5000)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
         .expect_string(&format!("{file_text}"))?
@@ -67,16 +67,30 @@ fn exec_cmds() -> Result<()> {
             "#,
             APK_ADD_ARGS
         ))?
-        .args(vec![
-            "--cleanup",
-            "--config-path",
-            "[config_path]",
-            "[name]",
-        ])?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(5000)?
         .send_line("which asciiquarium")?
         .expect_string("/usr/bin/asciiquarium")?
         .send_line("exit")?
+        .expect_terminate()?
+        .success()
+}
+
+#[test]
+fn build() -> Result<()> {
+    TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            image = "alpine:edge"
+            exec_cmds = ["apk add {} asciiquarium"]
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]    
+            "#,
+            APK_ADD_ARGS
+        ))?
+        .args(vec!["--config-path", "[config_path]", "build", "[name]"])?
+        .run(5000)?
         .expect_terminate()?
         .success()
 }
@@ -105,12 +119,7 @@ fn mount_working_dir() -> Result<()> {
             container_mount_dir,
         ))?
         .envs(vec![("PWD", tmp_dir.path().to_str().unwrap())])?
-        .args(vec![
-            "--cleanup",
-            "--config-path",
-            "[config_path]",
-            "[name]",
-        ])?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(5000)?
         .send_line(&format!("cat {mounted_file_name}"))?
         .expect_string(&format!("{file_text}"))?
@@ -135,7 +144,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             entry_options = ["-it"]
             "#,
         ))?
-        .args(vec!["--config-path", "[config_path]", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(5000)?
         .send_line("echo $0")?
         .expect_string("/bin/ash")?;
@@ -148,6 +157,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .args(vec![
             "--config-path",
             harness.config_path(),
+            "up",
             &container_name,
         ])?
         .run(5000)?
