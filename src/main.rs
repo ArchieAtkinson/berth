@@ -47,7 +47,7 @@ async fn run() -> Result<(), AppError> {
     let mut preset = Preset::new(&config_content)?;
 
     let env = find_environment_in_config(&mut preset, &app_config.env_name)?;
-    let docker = ContainerEngine::new(env, app_config.no_tty)?;
+    let docker = ContainerEngine::new(env)?;
     let result = {
         if !docker.does_environment_exist().await? {
             docker.create_new_environment().await?;

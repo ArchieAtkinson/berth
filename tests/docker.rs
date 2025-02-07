@@ -35,8 +35,9 @@ fn mount() -> Result<()> {
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
-            mounts = ["{}:{}"]    
+            entry_cmd = "/bin/ash"
+            create_options = ["-it", "-v{}:{}"]
+            entry_options = ["-it"]
             "#,
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
@@ -60,7 +61,9 @@ fn exec_cmds() -> Result<()> {
             r#"
             image = "alpine:edge"
             exec_cmds = ["apk add {} asciiquarium"]
-            init_cmd = "/bin/ash"    
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]    
             "#,
             APK_ADD_ARGS
         ))?
@@ -95,9 +98,9 @@ fn mount_working_dir() -> Result<()> {
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
-            mounts = ["$PWD:{0}"]
-            entry_dir = "{0}"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it", "-v $PWD:{0}"]
+            entry_options = ["-it", "-w {0}"]
             "#,
             container_mount_dir,
         ))?
@@ -127,7 +130,9 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]
             "#,
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?

@@ -1,6 +1,10 @@
 [env.Test]
 image = "alpine:edge"
 exec_cmds = ["apk add helix bash"]
-init_cmd = "/bin/ash"
-mounts = ["$HOME/.config/helix:/root/.config/helix", "$PWD:/berth"]
-entry_dir = "/berth"
+entry_cmd = "/bin/ash"
+create_options = [
+  "-v $HOME/.config/helix:/root/.config/helix",
+  "-v $PWD:/berth",
+  "-it",
+]
+entry_options = ["-w /berth", "-it"]

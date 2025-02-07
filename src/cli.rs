@@ -30,10 +30,6 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    /// Disable TTY and interaction with container
-    #[arg(long, default_value_t = false)]
-    pub no_tty: bool,
-
     /// The environment from your config file to use
     pub env_name: String,
 }
@@ -42,7 +38,6 @@ pub struct AppConfig {
     pub config_path: PathBuf,
     pub env_name: String,
     pub cleanup: bool,
-    pub no_tty: bool,
 }
 
 impl AppConfig {
@@ -64,7 +59,6 @@ impl AppConfig {
             config_path: Self::set_config_path(cli.config_path)?,
             env_name: cli.env_name,
             cleanup: cli.cleanup,
-            no_tty: cli.no_tty,
         })
     }
 

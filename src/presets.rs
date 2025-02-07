@@ -14,14 +14,16 @@ pub enum PresetError {
 #[serde(deny_unknown_fields)]
 pub struct Env {
     #[serde(skip_deserializing)]
-    pub name: String, // Get this from the Preset
-
+    pub name: String,
     pub image: String,
+    pub entry_cmd: String,
+
+    pub entry_options: Option<Vec<String>>,
+
     pub exec_cmds: Option<Vec<String>>,
-    pub mounts: Option<Vec<String>>,
-    pub init_cmd: String,
-    pub user: Option<String>,
-    pub entry_dir: Option<String>,
+    pub exec_options: Option<Vec<String>>,
+
+    pub create_options: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,23 +44,24 @@ impl Preset {
             }),
         }
     }
+
     fn parse_envs(envs: HashMap<String, Env>) -> HashMap<String, Env> {
         envs.into_iter()
             .map(|(name, mut env)| {
                 env.name = name.clone();
-                env.mounts = env.mounts.map(|mounts| Self::expand_env_vars(mounts));
-
+                env.entry_options = env.entry_options.map(|s| Self::expand_env_vars(s));
+                env.exec_options = env.exec_options.map(|s| Self::expand_env_vars(s));
+                env.create_options = env.create_options.map(|s| Self::expand_env_vars(s));
                 (name, env)
             })
             .collect()
     }
 
-    fn expand_env_vars(mounts: Vec<String>) -> Vec<String> {
+    fn expand_env_vars(vec: Vec<String>) -> Vec<String> {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
-        mounts
-            .into_iter()
+        vec.into_iter()
             .map(|mount| envmnt::expand(&mount, Some(options)).to_string())
             .collect()
     }

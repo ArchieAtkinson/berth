@@ -386,6 +386,8 @@ impl RunningTestHarness {
         self.base.name()
     }
 
+    #[must_use]
+    #[track_caller]
     fn expect<T: expectrl::Needle>(&mut self, expected: T) -> Result<()> {
         match self.session.expect(expected) {
             Ok(_) => (),
@@ -485,11 +487,6 @@ impl TestOutput {
     #[must_use]
     #[track_caller]
     pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
-        if !args.contains(&"--no-tty") {
-            return Err(eyre!(
-                "Error: TestOutput doesn't not provided a TTY, tests must use '--no-tty"
-            ));
-        }
         self.base.args(args)?;
         Ok(self)
     }

@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 use tempfile::{NamedTempFile, TempDir};
-use test::{TestHarness, TestOutput};
+use test::TestOutput;
 
 pub mod test;
 
@@ -39,12 +39,12 @@ fn env_name_with_config_in_xdg_config_path() -> Result<()> {
             &indoc!(
                 r#"
             image = "alpine:edge"
-            init_cmd = "true"
+            entry_cmd = "true"
             "#,
             ),
             &file_path,
         )?
-        .args(vec!["--no-tty", "[name]"])?
+        .args(vec!["[name]"])?
         .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])?
         .stderr(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
@@ -70,12 +70,12 @@ fn env_name_with_config_in_home_path() -> Result<()> {
             &indoc!(
                 r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
+            entry_cmd = "/bin/ash"
             "#,
             ),
             &file_path,
         )?
-        .args(vec!["--no-tty", "[name]"])?
+        .args(vec!["[name]"])?
         .envs(vec![("HOME", tmp_dir.path().to_str().unwrap())])?
         .stderr(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
@@ -92,10 +92,10 @@ fn env_name_with_no_config_in_env() -> Result<()> {
         .config(&indoc!(
             r#"
             image = "alpine:edge"
-            init_cmd = "/bin/ash"
+            entry_cmd = "/bin/ash"
             "#,
         ))?
-        .args(vec!["--no-tty", "[name]"])?
+        .args(vec!["[name]"])?
         .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")?
         .code(1)?
         .run()
@@ -145,22 +145,4 @@ fn incorrect_option_command() {
         "#
         )
     );
-}
-
-#[test]
-fn no_tty_prevents_interactive_terminal() -> Result<()> {
-    TestHarness::new()
-        .config(&indoc!(
-            r#"
-            image = "alpine:edge"
-             init_cmd = "echo hello"
-            "#,
-        ))?
-        .args(vec!["--no-tty", "--config-path", "[config_path]", "[name]"])?
-        .run(5000)?
-        .expect_string("hello")?
-        .expect_terminate()?
-        .success()?;
-
-    Ok(())
 }
