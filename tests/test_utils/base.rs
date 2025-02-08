@@ -11,7 +11,7 @@ use tempfile::NamedTempFile;
 
 use super::BINARY;
 
-pub(crate)  struct TestBase {
+pub(crate) struct TestBase {
     pub(crate) config_path: PathBuf,
     pub(crate) tmp_config_file: Option<NamedTempFile>,
     pub(crate) name: String,
@@ -56,8 +56,11 @@ impl TestBase {
     #[must_use]
     #[track_caller]
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
-        fs::write(path, format!("[environment.\"{}\"]\n{}", &self.name, content))
-            .wrap_err("Failed to write config to temporary file")?;
+        fs::write(
+            path,
+            format!("[environment.\"{}\"]\n{}", &self.name, content),
+        )
+        .wrap_err("Failed to write config to temporary file")?;
         self.config_path = path.to_path_buf();
         Ok(self)
     }
@@ -147,7 +150,6 @@ impl TestBase {
         let other_chars: Vec<char> = (b'a'..=b'z')
             .chain(b'A'..=b'Z')
             .chain(b'0'..=b'9')
-            .chain(vec![b'_', b'.'])
             .map(char::from)
             .collect();
 
@@ -173,6 +175,20 @@ impl TestBase {
                 println!("Deleting container: {}", container);
                 Command::new("docker")
                     .args(["rm", "-f", &container])
+                    .output()
+                    .unwrap();
+            }
+
+            let image_name = format!("berth-{}*", &self.name().to_lowercase());
+            let images = Command::new("docker")
+                .args(["images", "-q", &image_name])
+                .output()
+                .unwrap();
+            let image = String::from_utf8(images.stdout).unwrap().trim().to_string();
+            if !image.is_empty() {
+                println!("Deleting image: {}", &image);
+                Command::new("docker")
+                    .args(["image", "rm", "-f", &image])
                     .output()
                     .unwrap();
             }

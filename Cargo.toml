@@ -22,6 +22,7 @@ bollard = "0.18"
 tokio = { version = "1.43", features = ["rt-multi-thread", "io-std", "time", "macros"] }
 futures-util = "0.3"
 tokio-util = "0.7"
+sha2 = "0.10"
 
 
 [dev-dependencies]

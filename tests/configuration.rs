@@ -1,4 +1,4 @@
-use berth::configuration::Configuration;
+use berth::configuration::{Configuration, ConfigurationError};
 use indoc::{formatdoc, indoc};
 use pretty_assertions::assert_eq;
 use test_utils::TmpEnvVar;
@@ -44,8 +44,64 @@ fn unknown_field() {
           |
         2 | unknown = "Should Fail"
           | ^^^^^^^
-        unknown field `unknown`, expected one of `image`, `entry_cmd`, `entry_options`, `exec_cmds`, `exec_options`, `create_options`
+        unknown field `unknown`, expected one of `entry_cmd`, `image`, `dockerfile`, `entry_options`, `exec_cmds`, `exec_options`, `create_options`
         "#
+        }
+    );
+}
+
+#[test]
+fn dockerfile() {
+    let content = indoc! {r#"
+        [environment.Env]
+        entry_cmd = "hello"
+        dockerfile = "world"
+    "#};
+    let binding = Configuration::new(&content).unwrap();
+    let env = binding.environments.get("Env").unwrap();
+    assert_eq!(env.dockerfile, "world");
+}
+
+#[test]
+fn image() {
+    let content = indoc! {r#"
+        [environment.Env]
+        entry_cmd = "hello"
+        image = "world"
+    "#};
+    let binding = Configuration::new(&content).unwrap();
+    let env = binding.environments.get("Env").unwrap();
+    assert_eq!(env.image, "world");
+}
+
+#[test]
+fn no_dockerfile_or_image() {
+    let content = indoc! {r#"
+        [environment.Env]
+        entry_cmd = "hello"
+    "#};
+    let err = Configuration::new(&content).unwrap_err();
+    assert_eq!(
+        err,
+        ConfigurationError::RequireDockerfileOrImage {
+            environment: "Env".to_string()
+        }
+    );
+}
+
+#[test]
+fn both_dockerfile_or_image() {
+    let content = indoc! {r#"
+        [environment.Env]
+        entry_cmd = "hello"
+        image = "world"
+        dockerfile = "!"
+    "#};
+    let err = Configuration::new(&content).unwrap_err();
+    assert_eq!(
+        err,
+        ConfigurationError::DockerfileOrImage {
+            environment: "Env".to_string()
         }
     );
 }

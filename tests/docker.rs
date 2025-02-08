@@ -1,9 +1,9 @@
 use bollard::{container::ListContainersOptions, Docker};
 use color_eyre::Result;
-use indoc::formatdoc;
+use indoc::{formatdoc, indoc};
 use std::{collections::HashMap, fs::File, io::Write};
-use tempfile::TempDir;
-use test_utils::{TestOutput, TestHarness, APK_ADD_ARGS};
+use tempfile::{NamedTempFile, TempDir};
+use test_utils::{TestHarness, TestOutput, APK_ADD_ARGS};
 
 pub mod test_utils;
 
@@ -183,5 +183,37 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .success()?;
 
     assert!(!is_container_running(&docker, &container_name).await);
+    Ok(())
+}
+
+#[test]
+fn dockerfile() -> Result<()> {
+    let dockerfile = NamedTempFile::new().unwrap();
+    let content = indoc! {
+    r#"
+    FROM alpine:edge
+    RUN apk add asciiquarium
+    "#};
+    write!(&dockerfile, "{}", content).unwrap();
+
+    TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            dockerfile = "{}"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+            dockerfile.path().to_str().unwrap(),
+        ))?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .run(5000)?
+        .send_line("which asciiquarium")?
+        .expect_string("/usr/bin/asciiquarium")?
+        .send_line("exit")?
+        .expect_terminate()?
+        .success()?;
+
+    dockerfile.close().unwrap();
     Ok(())
 }

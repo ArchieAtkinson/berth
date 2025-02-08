@@ -1,9 +1,9 @@
 use std::process::exit;
 
 use berth::cli;
+use berth::configuration::TomlEnvironment;
 use berth::errors::AppError;
-use berth::configuration::Environment;
-use berth::{cli::AppConfig, docker::ContainerEngine, configuration::Configuration};
+use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
 
 use log::info;
 use log4rs::append::file::FileAppender;
@@ -28,7 +28,10 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn find_environment_in_config(configuration: &mut Configuration, name: &str) -> Result<Environment, AppError> {
+fn find_environment_in_config(
+    configuration: &mut Configuration,
+    name: &str,
+) -> Result<TomlEnvironment, AppError> {
     match configuration.environments.remove(name) {
         Some(e) => Ok(e),
         None => Err(AppError::ProvidedEnvNameNotInConfig {
@@ -37,7 +40,7 @@ fn find_environment_in_config(configuration: &mut Configuration, name: &str) -> 
     }
 }
 
-async fn build(docker: &ContainerEngine) -> Result<(), AppError> {
+async fn build(docker: &DockerHandler) -> Result<(), AppError> {
     docker.create_new_environment().await?;
 
     if docker.is_container_running().await? && !docker.is_anyone_connected().await? {
@@ -47,7 +50,7 @@ async fn build(docker: &ContainerEngine) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn up(docker: &ContainerEngine) -> Result<(), AppError> {
+async fn up(docker: &DockerHandler) -> Result<(), AppError> {
     if !docker.does_environment_exist().await? {
         docker.create_new_environment().await?;
     } else {
@@ -74,7 +77,7 @@ async fn run() -> Result<(), AppError> {
     };
 
     let env = find_environment_in_config(&mut configuration, &name)?;
-    let docker = ContainerEngine::new(env)?;
+    let docker = DockerHandler::new(env, &name)?;
 
     let result = {
         match &app_config.command {
