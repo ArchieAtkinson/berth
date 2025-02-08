@@ -59,7 +59,12 @@ impl ContainerEngine {
     pub fn new(mut environment: Environment) -> Result<Self, DockerError> {
         let mut hasher = DefaultHasher::new();
         environment.hash(&mut hasher);
-        environment.name = format!("{}{}-{:016x}", CONTAINER_PREFIX, environment.name, hasher.finish());
+        environment.name = format!(
+            "{}{}-{:016x}",
+            CONTAINER_PREFIX,
+            environment.name,
+            hasher.finish()
+        );
         Ok(ContainerEngine {
             environment,
             docker: Docker::connect_with_local_defaults()
@@ -74,12 +79,11 @@ impl ContainerEngine {
         self.exec_setup_commands()
     }
 
-    fn to_shell(strings: &Option<Vec<String>>) -> Vec<String> {
-        strings.as_ref().map_or_else(Vec::new, |v| {
-            v.iter()
-                .flat_map(|s| shell_words::split(s).unwrap())
-                .collect()
-        })
+    fn to_shell(strings: &Vec<String>) -> Vec<String> {
+        strings
+            .iter()
+            .flat_map(|s| shell_words::split(s).unwrap())
+            .collect()
     }
 
     pub async fn enter_environment(&self) -> Result<(), DockerError> {
@@ -141,21 +145,14 @@ impl ContainerEngine {
             .await
             .map_err(docker_err!(ListingContainers))?;
 
-        if container_list.is_empty() {
-            return Ok(None);
-        } else if container_list.len() > 1 {
-            unreachable!("Should not have two containers with the same name");
-        }
-
-        Ok(Some(container_list.remove(0)))
+        Ok(container_list.pop())
     }
 
     pub async fn is_container_running(&self) -> Result<bool, DockerError> {
-        if let Some(container_summary) = self.get_container_info().await? {
-            return Ok(container_summary.state == Some("running".to_string()));
-        } else {
-            return Ok(false);
-        }
+        Ok(self
+            .get_container_info()
+            .await?
+            .map_or(false, |c| c.state == Some("running".to_string())))
     }
 
     pub async fn does_environment_exist(&self) -> Result<bool, DockerError> {
@@ -174,7 +171,10 @@ impl ContainerEngine {
 
     pub async fn start_container(&self) -> Result<(), DockerError> {
         self.docker
-            .start_container(&self.environment.name, None::<StartContainerOptions<String>>)
+            .start_container(
+                &self.environment.name,
+                None::<StartContainerOptions<String>>,
+            )
             .await
             .map_err(docker_err!(StartingContainer))?;
         Ok(())
@@ -192,22 +192,19 @@ impl ContainerEngine {
     }
 
     fn exec_setup_commands(&self) -> Result<(), DockerError> {
-        if let Some(cmds) = &self.environment.exec_cmds {
-            for cmd in cmds {
-                let mut args = vec!["exec"];
+        for cmd in &self.environment.exec_cmds {
+            let mut args = vec!["exec"];
 
-                let options = Self::to_shell(&self.environment.exec_options);
-                args.extend(options.iter().map(|s| s.as_str()));
+            let options = Self::to_shell(&self.environment.exec_options);
+            args.extend(options.iter().map(|s| s.as_str()));
 
-                args.push(&self.environment.name);
+            args.push(&self.environment.name);
 
-                let split_cmd = shell_words::split(cmd).unwrap();
-                args.extend(split_cmd.iter().map(|s| s.as_str()));
+            let split_cmd = shell_words::split(cmd).unwrap();
+            args.extend(split_cmd.iter().map(|s| s.as_str()));
 
-                Self::run_docker_command(args)?;
-            }
+            Self::run_docker_command(args)?;
         }
-
         Ok(())
     }
 

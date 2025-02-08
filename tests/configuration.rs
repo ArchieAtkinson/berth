@@ -1,5 +1,6 @@
 use berth::configuration::Configuration;
 use indoc::{formatdoc, indoc};
+use pretty_assertions::assert_eq;
 use test_utils::TmpEnvVar;
 
 pub mod test_utils;
@@ -15,16 +16,16 @@ fn basic_configuration_file() {
         image = "image2"
         entry_cmd = "init2"
     "#;
-    let configuration = Configuration::new(&content).unwrap();
+    let envs = Configuration::new(&content).unwrap().environments;
 
-    assert!(configuration.environments.contains_key("Env1"));
-    assert!(configuration.environments.contains_key("Env2"));
+    assert!(envs.contains_key("Env1"));
+    assert!(envs.contains_key("Env2"));
 
-    assert_eq!(configuration.environments.get("Env1").unwrap().image, "image1");
-    assert_eq!(configuration.environments.get("Env2").unwrap().image, "image2");
+    assert_eq!(envs.get("Env1").unwrap().image, "image1");
+    assert_eq!(envs.get("Env2").unwrap().image, "image2");
 
-    assert_eq!(configuration.environments.get("Env1").unwrap().entry_cmd, "init1");
-    assert_eq!(configuration.environments.get("Env2").unwrap().entry_cmd, "init2");
+    assert_eq!(envs.get("Env1").unwrap().entry_cmd, "init1");
+    assert_eq!(envs.get("Env2").unwrap().entry_cmd, "init2");
 }
 
 #[test]
@@ -34,10 +35,19 @@ fn unknown_field() {
         unknown = "Should Fail"
     "#};
     let configuration = Configuration::new(&content);
-    assert!(configuration.is_err());
     let err_str = configuration.unwrap_err().to_string();
-    assert!(err_str.contains("TOML parse error at line 2, column 1"));
-    assert!(err_str.contains("unknown field `unknown`"));
+    assert_eq!(
+        err_str,
+        indoc! {
+        r#"
+        TOML parse error at line 2, column 1
+          |
+        2 | unknown = "Should Fail"
+          | ^^^^^^^
+        unknown field `unknown`, expected one of `image`, `entry_cmd`, `entry_options`, `exec_cmds`, `exec_options`, `create_options`
+        "#
+        }
+    );
 }
 
 #[test]
@@ -48,18 +58,17 @@ fn env_vars_in_options() {
         [environment.Env]
         image = "image"
         entry_cmd = "cmd"
-        create_options = ["${}"]
-        exec_options = ["${}"]
-        entry_options = ["${}"]
+        create_options = ["${0}"]
+        exec_options = ["${0}"]
+        entry_options = ["${0}"]
     "#,
-        var.name(),
-        var.name(),
         var.name()
     );
 
     let mut configuration = Configuration::new(&content).unwrap();
     let env = configuration.environments.remove("Env").unwrap();
-    assert_eq!(&env.create_options.unwrap()[0], &format!("{}", var.value()));
-    assert_eq!(&env.exec_options.unwrap()[0], &format!("{}", var.value()));
-    assert_eq!(&env.entry_options.unwrap()[0], &format!("{}", var.value()));
+
+    assert_eq!(&env.create_options[0], &var.value());
+    assert_eq!(&env.exec_options[0], &var.value());
+    assert_eq!(&env.entry_options[0], &var.value());
 }

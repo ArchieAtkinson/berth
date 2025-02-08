@@ -18,12 +18,17 @@ pub struct Environment {
     pub image: String,
     pub entry_cmd: String,
 
-    pub entry_options: Option<Vec<String>>,
+    #[serde(default)]
+    pub entry_options: Vec<String>,
 
-    pub exec_cmds: Option<Vec<String>>,
-    pub exec_options: Option<Vec<String>>,
+    #[serde(default)]
+    pub exec_cmds: Vec<String>,
 
-    pub create_options: Option<Vec<String>>,
+    #[serde(default)]
+    pub exec_options: Vec<String>,
+
+    #[serde(default)]
+    pub create_options: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,20 +54,19 @@ impl Configuration {
         envs.into_iter()
             .map(|(name, mut env)| {
                 env.name = name.clone();
-                env.entry_options = env.entry_options.map(|s| Self::expand_env_vars(s));
-                env.exec_options = env.exec_options.map(|s| Self::expand_env_vars(s));
-                env.create_options = env.create_options.map(|s| Self::expand_env_vars(s));
+                Self::expand_env_vars(&mut env.entry_options);
+                Self::expand_env_vars(&mut env.exec_options);
+                Self::expand_env_vars(&mut env.create_options);
                 (name, env)
             })
             .collect()
     }
 
-    fn expand_env_vars(vec: Vec<String>) -> Vec<String> {
+    fn expand_env_vars(vec: &mut Vec<String>) {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
-        vec.into_iter()
-            .map(|mount| envmnt::expand(&mount, Some(options)).to_string())
-            .collect()
+        vec.iter_mut()
+            .for_each(|s| *s = envmnt::expand(&s, Some(options)));
     }
 }
