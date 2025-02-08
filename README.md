@@ -42,17 +42,17 @@ image = "alpine:edge"
 entry_cmd = ["/bin/ash"]
 ```
 
-Each environment is defined in a `env` subtable, with the name used to the reference the environment the name of the subtable. In the above example that is "MyProjectDev".
+Each environment is defined in a `environment` sub-table, with the name used to the reference the environment the name of the sub-table. In the above example that is "MyProjectDev".
 
 | Option | Type | Description | Example |
 |:-:|:-:|:-:|:-:|
-| Name | String | The name used to reference the  environment in the CLI. This is required  and has to be unique. | `[environment.Foo]`|
-| Image | String | The container image to use. Used with `docker create`. This is a required field. | `image = "alpine:edge"` |
-| entry_cmd | String|  The command that will be run in the container whenever it is started. Used with `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
-| entry_options | Array of Strings | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
-| exec_cmds| String Array | A set of additional commands that will be run in the container when it is created, useful for add additional packages and other setup. | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
-| exec_options | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
-| create_options | String Array | Docker CLI options passed to `docker create` command.`--name` is not allowed as that is controlled by `berth`| `create_options = ["--privileged"]`|
+| `image` | String | The container image to use. Used with `docker create`. This or the `dockerfile` field is required. | `image = "alpine:edge"` |
+| `dockerfile` | String | The path to a dockerfile, this will be build and used with `docker create`. This or the `image` field is required. | `dockerfile = "$HOME/dockerfile"` |
+| `entry_cmd` | String|  The command that will be run in the container whenever it is started. Used with `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
+| `entry_options` | Array of Strings | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
+| `exec_cmds`| String Array | A set of additional commands that will be run in the container when it is created, useful for add additional packages and other setup. | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
+| `exec_options` | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
+| `create_options` | String Array | Docker CLI options passed to `docker create` command.`--name` is not allowed as that is controlled by `berth`| `create_options = ["--privileged"]`|
 
 
 ### Mounts Environment Variable Expansion Side Effects
