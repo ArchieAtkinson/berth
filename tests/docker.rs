@@ -3,7 +3,7 @@ use color_eyre::Result;
 use indoc::formatdoc;
 use std::{collections::HashMap, fs::File, io::Write};
 use tempfile::TempDir;
-use test::APK_ADD_ARGS;
+use test::{TestOutput, APK_ADD_ARGS};
 
 pub mod test;
 use crate::test::TestHarness;
@@ -76,23 +76,30 @@ fn exec_cmds() -> Result<()> {
         .success()
 }
 
-#[test]
-fn build() -> Result<()> {
-    TestHarness::new()
+#[tokio::test]
+async fn build() -> Result<()> {
+    let mut test = TestOutput::new()
         .config(&formatdoc!(
             r#"
             image = "alpine:edge"
             exec_cmds = ["apk add {} asciiquarium"]
             entry_cmd = "/bin/ash"
             create_options = ["-it"]
-            entry_options = ["-it"]    
+            entry_options = ["-it"]
             "#,
             APK_ADD_ARGS
         ))?
         .args(vec!["--config-path", "[config_path]", "build", "[name]"])?
-        .run(5000)?
-        .expect_terminate()?
-        .success()
+        .stderr("Using config file at \"[config_path]\"\n")?
+        .code(0)?;
+
+    test.run()?;
+
+    std::thread::sleep(std::time::Duration::from_secs(1)); // wait for container to stop
+
+    let docker = Docker::connect_with_local_defaults().unwrap();
+    assert!(!is_container_running(&docker, &test.name()).await);
+    Ok(())
 }
 
 #[test]

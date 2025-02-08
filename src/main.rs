@@ -39,12 +39,17 @@ fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, Ap
 
 async fn build(docker: &ContainerEngine) -> Result<(), AppError> {
     docker.create_new_environment().await?;
+
+    if docker.is_container_running().await? && !docker.is_anyone_connected().await? {
+        docker.stop_container().await?;
+    }
+
     Ok(())
 }
 
 async fn up(docker: &ContainerEngine) -> Result<(), AppError> {
     if !docker.does_environment_exist().await? {
-        build(docker).await?;
+        docker.create_new_environment().await?;
     } else {
         docker.start_container().await?;
     }

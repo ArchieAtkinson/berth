@@ -421,7 +421,7 @@ impl RunningTestHarness {
 impl TerminatedTestHarness {
     #[must_use]
     #[track_caller]
-    pub fn success(self) -> Result<()> {
+    pub fn success(&self) -> Result<()> {
         match self.wait_status {
             WaitStatus::Exited(_, 0) => Ok(()),
             WaitStatus::Exited(_, n) => Err(eyre!("Unexpected exit code: {}", n)),
@@ -431,7 +431,7 @@ impl TerminatedTestHarness {
 
     #[must_use]
     #[track_caller]
-    pub fn failure(self, expected_code: i32) -> Result<()> {
+    pub fn failure(&self, expected_code: i32) -> Result<()> {
         match self.wait_status {
             WaitStatus::Exited(_, 0) => Err(eyre!("Unexpected successful exit")),
             WaitStatus::Exited(_, n) if n == expected_code => Ok(()),
@@ -509,6 +509,10 @@ impl TestOutput {
     #[track_caller]
     pub fn stdout(mut self, content: impl Into<String>) -> Result<Self> {
         self.stdout = content.into();
+        for (key, value) in &self.base.replacements {
+            self.stdout = self.stderr.replace(key, &value);
+        }
+
         Ok(self)
     }
 
@@ -516,6 +520,10 @@ impl TestOutput {
     #[track_caller]
     pub fn stderr(mut self, content: impl Into<String>) -> Result<Self> {
         self.stderr = content.into();
+        for (key, value) in &self.base.replacements {
+            self.stderr = self.stderr.replace(key, &value);
+        }
+
         Ok(self)
     }
 
@@ -528,7 +536,19 @@ impl TestOutput {
 
     #[must_use]
     #[track_caller]
-    pub fn run(mut self) -> Result<()> {
+    pub fn config_path(&self) -> &str {
+        self.base.config_path()
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn name(&self) -> &str {
+        self.base.name()
+    }
+
+    #[must_use]
+    #[track_caller]
+    pub fn run(&mut self) -> Result<()> {
         let output = self
             .base
             .create_command()?

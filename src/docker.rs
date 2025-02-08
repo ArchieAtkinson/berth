@@ -219,7 +219,7 @@ impl ContainerEngine {
         Ok(())
     }
 
-    async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
+    pub async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
         let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
         let output = Self::run_docker_command_with_output(args)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
