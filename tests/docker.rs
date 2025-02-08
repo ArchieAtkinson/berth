@@ -3,10 +3,9 @@ use color_eyre::Result;
 use indoc::formatdoc;
 use std::{collections::HashMap, fs::File, io::Write};
 use tempfile::TempDir;
-use test::{TestOutput, APK_ADD_ARGS};
+use test_utils::{TestOutput, TestHarness, APK_ADD_ARGS};
 
-pub mod test;
-use crate::test::TestHarness;
+pub mod test_utils;
 
 async fn is_container_running(docker: &Docker, name: &str) -> bool {
     let mut filters = HashMap::new();

@@ -2,8 +2,8 @@ use std::process::exit;
 
 use berth::cli;
 use berth::errors::AppError;
-use berth::presets::Env;
-use berth::{cli::AppConfig, docker::ContainerEngine, presets::Preset};
+use berth::configuration::Environment;
+use berth::{cli::AppConfig, docker::ContainerEngine, configuration::Configuration};
 
 use log::info;
 use log4rs::append::file::FileAppender;
@@ -28,8 +28,8 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn find_environment_in_config(preset: &mut Preset, name: &str) -> Result<Env, AppError> {
-    match preset.envs.remove(name) {
+fn find_environment_in_config(configuration: &mut Configuration, name: &str) -> Result<Environment, AppError> {
+    match configuration.environments.remove(name) {
         Some(e) => Ok(e),
         None => Err(AppError::ProvidedEnvNameNotInConfig {
             name: name.to_string(),
@@ -66,20 +66,20 @@ async fn run() -> Result<(), AppError> {
 
     let config_content =
         std::fs::read_to_string(app_config.config_path).expect("Failed to read config file");
-    let mut preset = Preset::new(&config_content)?;
+    let mut configuration = Configuration::new(&config_content)?;
 
     let name = match &app_config.command {
-        cli::Commands::Up { env } => env,
-        cli::Commands::Build { env } => env,
+        cli::Commands::Up { environment } => environment,
+        cli::Commands::Build { environment } => environment,
     };
 
-    let env = find_environment_in_config(&mut preset, &name)?;
+    let env = find_environment_in_config(&mut configuration, &name)?;
     let docker = ContainerEngine::new(env)?;
 
     let result = {
         match &app_config.command {
-            cli::Commands::Up { env: _ } => up(&docker).await,
-            cli::Commands::Build { env: _ } => build(&docker).await,
+            cli::Commands::Up { environment: _ } => up(&docker).await,
+            cli::Commands::Build { environment: _ } => build(&docker).await,
         }
     };
 

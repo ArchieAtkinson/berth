@@ -1,4 +1,4 @@
-use crate::presets::Env;
+use crate::configuration::Environment;
 use bollard::{
     container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
     secret::ContainerSummary,
@@ -13,7 +13,7 @@ use std::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
-    #[error("Failed to conntect to docker daemon:\n {:?}", error)]
+    #[error("Failed to connect to docker daemon:\n {:?}", error)]
     ConnectingToDaemon { error: bollard::errors::Error },
 
     #[error("Failed to list containers:\n {:?}", error)]
@@ -51,17 +51,17 @@ const CONTAINER_PREFIX: &str = "berth-";
 const CONTAINER_ENGINE: &str = "docker";
 
 pub struct ContainerEngine {
-    env: Env,
+    environment: Environment,
     docker: Docker,
 }
 
 impl ContainerEngine {
-    pub fn new(mut env: Env) -> Result<Self, DockerError> {
+    pub fn new(mut environment: Environment) -> Result<Self, DockerError> {
         let mut hasher = DefaultHasher::new();
-        env.hash(&mut hasher);
-        env.name = format!("{}{}-{:016x}", CONTAINER_PREFIX, env.name, hasher.finish());
+        environment.hash(&mut hasher);
+        environment.name = format!("{}{}-{:016x}", CONTAINER_PREFIX, environment.name, hasher.finish());
         Ok(ContainerEngine {
-            env,
+            environment,
             docker: Docker::connect_with_local_defaults()
                 .map_err(docker_err!(ConnectingToDaemon))?,
         })
@@ -85,12 +85,12 @@ impl ContainerEngine {
     pub async fn enter_environment(&self) -> Result<(), DockerError> {
         let mut args = vec!["exec"];
 
-        let options = Self::to_shell(&self.env.entry_options);
+        let options = Self::to_shell(&self.environment.entry_options);
         args.extend(options.iter().map(|s| s.as_str()));
 
-        args.push(&self.env.name);
+        args.push(&self.environment.name);
 
-        let init_cmd = shell_words::split(&self.env.entry_cmd).unwrap();
+        let init_cmd = shell_words::split(&self.environment.entry_cmd).unwrap();
         args.extend_from_slice(&init_cmd.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
         let command = format!("{CONTAINER_ENGINE} {}", shell_words::join(&args));
@@ -110,7 +110,7 @@ impl ContainerEngine {
             Some(127) => Some("Command not found"),
             Some(130) => None, // Interrupt from Ctrl+C
             Some(_) => None,
-            None => Some("Container was exited by siginal"),
+            None => Some("Container was exited by signal"),
         };
 
         if let Some(error_str) = error_str {
@@ -128,7 +128,7 @@ impl ContainerEngine {
 
     pub async fn get_container_info(&self) -> Result<Option<ContainerSummary>, DockerError> {
         let mut filters = HashMap::new();
-        filters.insert("name", vec![self.env.name.as_str()]);
+        filters.insert("name", vec![self.environment.name.as_str()]);
         let options = Some(ListContainersOptions {
             all: true,
             filters,
@@ -165,7 +165,7 @@ impl ContainerEngine {
     pub async fn delete_container_if_exists(&self) -> Result<(), DockerError> {
         if self.does_environment_exist().await? {
             self.docker
-                .remove_container(&self.env.name, None)
+                .remove_container(&self.environment.name, None)
                 .await
                 .map_err(docker_err!(StoppingContainer))?;
         }
@@ -174,32 +174,32 @@ impl ContainerEngine {
 
     pub async fn start_container(&self) -> Result<(), DockerError> {
         self.docker
-            .start_container(&self.env.name, None::<StartContainerOptions<String>>)
+            .start_container(&self.environment.name, None::<StartContainerOptions<String>>)
             .await
             .map_err(docker_err!(StartingContainer))?;
         Ok(())
     }
 
     fn create_container(&self) -> Result<(), DockerError> {
-        let mut args = vec!["create", "--name", &self.env.name];
+        let mut args = vec!["create", "--name", &self.environment.name];
 
-        let options = Self::to_shell(&self.env.create_options);
+        let options = Self::to_shell(&self.environment.create_options);
         args.extend(options.iter().map(|s| s.as_str()));
 
-        args.push(&self.env.image);
+        args.push(&self.environment.image);
         args.extend_from_slice(&["tail", "-f", "/dev/null"]);
         Self::run_docker_command(args)
     }
 
     fn exec_setup_commands(&self) -> Result<(), DockerError> {
-        if let Some(cmds) = &self.env.exec_cmds {
+        if let Some(cmds) = &self.environment.exec_cmds {
             for cmd in cmds {
                 let mut args = vec!["exec"];
 
-                let options = Self::to_shell(&self.env.exec_options);
+                let options = Self::to_shell(&self.environment.exec_options);
                 args.extend(options.iter().map(|s| s.as_str()));
 
-                args.push(&self.env.name);
+                args.push(&self.environment.name);
 
                 let split_cmd = shell_words::split(cmd).unwrap();
                 args.extend(split_cmd.iter().map(|s| s.as_str()));
@@ -213,14 +213,14 @@ impl ContainerEngine {
 
     pub async fn stop_container(&self) -> Result<(), DockerError> {
         self.docker
-            .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
+            .stop_container(&self.environment.name, Some(StopContainerOptions { t: 0 }))
             .await
             .map_err(docker_err!(StoppingContainer))?;
         Ok(())
     }
 
     pub async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
-        let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
+        let args = vec!["exec", &self.environment.name, "ls", "/dev/pts"];
         let output = Self::run_docker_command_with_output(args)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
 

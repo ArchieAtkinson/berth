@@ -5,14 +5,14 @@ use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum PresetError {
+pub enum ConfigurationError {
     #[error("{message}")]
     TomlParse { message: String },
 }
 
 #[derive(Debug, Deserialize, Hash)]
 #[serde(deny_unknown_fields)]
-pub struct Env {
+pub struct Environment {
     #[serde(skip_deserializing)]
     pub name: String,
     pub image: String,
@@ -28,24 +28,24 @@ pub struct Env {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Preset {
+pub struct Configuration {
     #[serde(rename = "env")]
-    pub envs: HashMap<String, Env>,
+    pub environments: HashMap<String, Environment>,
 }
 
-impl Preset {
-    pub fn new(file: &str) -> Result<Preset, PresetError> {
-        match toml::from_str::<Preset>(file) {
-            Ok(v) => Ok(Preset {
-                envs: Self::parse_envs(v.envs),
+impl Configuration {
+    pub fn new(file: &str) -> Result<Configuration, ConfigurationError> {
+        match toml::from_str::<Configuration>(file) {
+            Ok(v) => Ok(Configuration {
+                environments: Self::parse_envs(v.environments),
             }),
-            Err(e) => Err(PresetError::TomlParse {
+            Err(e) => Err(ConfigurationError::TomlParse {
                 message: e.to_string(),
             }),
         }
     }
 
-    fn parse_envs(envs: HashMap<String, Env>) -> HashMap<String, Env> {
+    fn parse_envs(envs: HashMap<String, Environment>) -> HashMap<String, Environment> {
         envs.into_iter()
             .map(|(name, mut env)| {
                 env.name = name.clone();

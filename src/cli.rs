@@ -39,13 +39,13 @@ pub enum Commands {
     /// Start an environment (and build it if it doesn't exist)
     Up {
         /// The environment from your config file to use
-        env: String,
+        environment: String,
     },
 
     /// Build/rebuild an environment
     Build {
         /// The environment from your config file to use
-        env: String,
+        environment: String,
     },
 }
 

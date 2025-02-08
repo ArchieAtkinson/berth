@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{cli::CliError, docker::DockerError, presets::PresetError};
+use crate::{cli::CliError, docker::DockerError, configuration::ConfigurationError};
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -11,8 +11,8 @@ pub enum AppError {
     Cli(#[from] CliError),
 
     #[error(transparent)]
-    Preset(#[from] PresetError),
+    Configuration(#[from] ConfigurationError),
 
-    #[error("Proved Enviroment, '{name}' is not in loaded config")]
+    #[error("Proved environment, '{name}' is not in loaded config")]
     ProvidedEnvNameNotInConfig { name: String },
 }

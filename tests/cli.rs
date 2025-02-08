@@ -7,9 +7,9 @@ use std::{
     path::PathBuf,
 };
 use tempfile::{NamedTempFile, TempDir};
-use test::TestOutput;
+use test_utils::TestOutput;
 
-pub mod test;
+pub mod test_utils;
 
 #[test]
 fn no_commands() {
@@ -111,7 +111,7 @@ fn valid_config_file() {
     assert_eq!(
         app_config.command,
         Commands::Up {
-            env: "Name".to_string()
+            environment: "Name".to_string()
         }
     );
     assert_eq!(app_config.config_path.to_str(), Some(config_file_path))
