@@ -7,11 +7,11 @@ pub mod test_utils;
 #[test]
 fn basic_configuration_file() {
     let content = r#"
-        [env.Env1]
+        [environment.Env1]
         image = "image1"
         entry_cmd = "init1"
 
-        [env.Env2]
+        [environment.Env2]
         image = "image2"
         entry_cmd = "init2"
     "#;
@@ -30,7 +30,7 @@ fn basic_configuration_file() {
 #[test]
 fn unknown_field() {
     let content = indoc! {r#"
-        [env.Env]
+        [environment.Env]
         unknown = "Should Fail"
     "#};
     let configuration = Configuration::new(&content);
@@ -45,7 +45,7 @@ fn env_vars_in_options() {
     let var = TmpEnvVar::new("/dir");
     let content = formatdoc!(
         r#"
-        [env.Env]
+        [environment.Env]
         image = "image"
         entry_cmd = "cmd"
         create_options = ["${}"]

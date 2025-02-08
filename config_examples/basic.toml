@@ -1,4 +1,4 @@
-[env.Test]
+[environment.Test]
 image = "alpine:edge"
 exec_cmds = ["apk add helix bash"]
 entry_cmd = "/bin/ash"

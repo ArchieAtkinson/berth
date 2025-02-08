@@ -9,7 +9,7 @@ Requires:
 - Docker
 - Docker CLI
 
-`berth` is very must a work in progress and promises no backwards comapabilty at this state. 
+`berth` is very must a work in progress and promises no backwards compatibility at this state. 
 
 ## Usage
 
@@ -29,7 +29,7 @@ Options:
   -h, --help                Print help
 ```
 
-To use `berth`, simply create a configuration file with an environment for your application and run `berth up <ENV_NAME>`. Rebuild your environment with `berth build <ENV_NAME>`, this is only required if the image updates, will automatilly rebuild if the configuration changes.  
+To use `berth`, simply create a configuration file with an environment for your application and run `berth up <ENV_NAME>`. Rebuild your environment with `berth build <ENV_NAME>`, this is only required if the image updates, will automatically rebuild if the configuration changes.  
 
 ## Configuration
 
@@ -37,7 +37,7 @@ The configuration file uses the `toml` format to describe environments. `berth` 
 
 Example of a bare minimum configuration:
 ```
-[env.MyProjectDev]
+[environment.MyProjectDev]
 image = "alpine:edge"
 entry_cmd = ["/bin/ash"]
 ```
@@ -46,7 +46,7 @@ Each environment is defined in a `env` subtable, with the name used to the refer
 
 | Option | Type | Description | Example |
 |:-:|:-:|:-:|:-:|
-| Name | String | The name used to reference the  environment in the CLI. This is required  and has to be unique. | `[env.Foo]`|
+| Name | String | The name used to reference the  environment in the CLI. This is required  and has to be unique. | `[environment.Foo]`|
 | Image | String | The container image to use. Used with `docker create`. This is a required field. | `image = "alpine:edge"` |
 | entry_cmd | String|  The command that will be run in the container whenever it is started. Used with `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
 | entry_options | Array of Strings | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
@@ -57,7 +57,7 @@ Each environment is defined in a `env` subtable, with the name used to the refer
 
 ### Mounts Environment Variable Expansion Side Effects
 
-The all `*_options` field will expand (local) environment variables. `berth` uses a hash of the entire environment configuration, post expansion to create a unquie idendifed to detect changes and find already active container. This can be useful to having one environment used for many different containers. The priarmy use case of this is mounting working directory with `PWD` as it will create a new container for each unquie working directory `berth` is ran in.
+The all `*_options` field will expand (local) environment variables. `berth` uses a hash of the entire environment configuration, post expansion to create a unique identified to detect changes and find already active container. This can be useful to having one environment used for many different containers. The primary use case of this is mounting working directory with `PWD` as it will create a new container for each unique working directory `berth` is ran in.
 
 ## Extra Information
 
@@ -80,10 +80,3 @@ The third part is a hash of the configuration used. This allows detecting change
 - Allow CLI options to be set in the configuration file
 - Pretty outputs (colours, spinners, etc)
 - Expand commands set (forcing rebuilds, deleting containers)
-
-## Notes for Me
-
-Possible command names?
-`berth embark <Name>` - Start container, build if it doesn't exitst, and enter it interactively
-`berth refit <Name>` - Rebuild the container
-

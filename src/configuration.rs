@@ -29,7 +29,7 @@ pub struct Environment {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Configuration {
-    #[serde(rename = "env")]
+    #[serde(rename = "environment")]
     pub environments: HashMap<String, Environment>,
 }
 

@@ -56,7 +56,7 @@ impl TestBase {
     #[must_use]
     #[track_caller]
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
-        fs::write(path, format!("[env.\"{}\"]\n{}", &self.name, content))
+        fs::write(path, format!("[environment.\"{}\"]\n{}", &self.name, content))
             .wrap_err("Failed to write config to temporary file")?;
         self.config_path = path.to_path_buf();
         Ok(self)
