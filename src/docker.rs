@@ -98,10 +98,6 @@ impl DockerHandler {
 
     pub fn build_dockerfile(dockerfile: &str, name: &str) -> Result<String, DockerError> {
         let path = fs::canonicalize(dockerfile).unwrap();
-        if !path.exists() || !path.is_file() {
-            panic!("BAD FILE");
-        }
-
         let mut file = File::open(&path).unwrap();
         let mut hasher = Sha256::new();
         let mut buffer = [0; 1024];

@@ -68,8 +68,8 @@ async fn run() -> Result<(), AppError> {
     eprintln!("Using config file at {:?}", app_config.config_path);
 
     let config_content =
-        std::fs::read_to_string(app_config.config_path).expect("Failed to read config file");
-    let mut configuration = Configuration::new(&config_content)?;
+        std::fs::read_to_string(&app_config.config_path).expect("Failed to read config file");
+    let mut configuration = Configuration::new(&config_content, &app_config.config_path)?;
 
     let name = match &app_config.command {
         cli::Commands::Up { environment } => environment,
