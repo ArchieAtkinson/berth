@@ -1,16 +1,12 @@
-use crate::configuration::TomlEnvironment;
+use crate::configuration::Environment;
 use bollard::{
     container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
     secret::ContainerSummary,
     Docker,
 };
 use log::info;
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    fs::{self, File},
-    hash::{DefaultHasher, Hash, Hasher},
-    io::Read,
     process::{Command, Output},
 };
 
@@ -50,86 +46,44 @@ macro_rules! docker_err {
     };
 }
 
-const BERTH_PREFIX: &str = "berth-";
 const CONTAINER_ENGINE: &str = "docker";
 
 #[derive(Debug)]
 pub struct DockerHandler {
-    name: String,
-    image: String,
-    entry_cmd: String,
-    entry_options: Vec<String>,
-    exec_cmds: Vec<String>,
-    exec_options: Vec<String>,
-    create_options: Vec<String>,
+    env: Environment,
     docker: Docker,
 }
 
 impl DockerHandler {
-    pub fn new(environment: TomlEnvironment, name: &str) -> Result<Self, DockerError> {
+    pub fn new(environment: Environment) -> Result<Self, DockerError> {
         let docker =
             Docker::connect_with_local_defaults().map_err(docker_err!(ConnectingToDaemon))?;
 
-        let image = {
-            if !environment.dockerfile.is_empty() {
-                Self::build_dockerfile(&environment.dockerfile, name)?
-            } else {
-                environment.image
-            }
-        };
-        let mut handle = DockerHandler {
-            name: name.to_string(),
-            image,
-            entry_cmd: environment.entry_cmd,
-            entry_options: environment.entry_options,
-            exec_cmds: environment.exec_cmds,
-            exec_options: environment.exec_options,
-            create_options: environment.create_options,
+        Ok(DockerHandler {
+            env: environment,
             docker,
-        };
-
-        let mut hasher = DefaultHasher::new();
-        handle.hash(&mut hasher);
-
-        handle.name = format!("{}{}-{:016x}", BERTH_PREFIX, name, hasher.finish());
-
-        Ok(handle)
+        })
     }
 
-    pub fn build_dockerfile(dockerfile: &str, name: &str) -> Result<String, DockerError> {
-        let path = fs::canonicalize(dockerfile).unwrap();
-        let mut file = File::open(&path).unwrap();
-        let mut hasher = Sha256::new();
-        let mut buffer = [0; 1024];
-
-        loop {
-            let bytes_read = file.read(&mut buffer).unwrap();
-            if bytes_read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..bytes_read]);
+    pub fn build_dockerfile_if_required(&self) -> Result<(), DockerError> {
+        if self.env.dockerfile.is_some() {
+            let dockerfile_path = self
+                .env
+                .dockerfile
+                .clone()
+                .unwrap()
+                .as_path()
+                .to_string_lossy()
+                .to_string();
+            let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
+            Self::run_docker_command(args)?;
         }
 
-        let image_name = format!(
-            "{}{}-{:016x}",
-            BERTH_PREFIX,
-            name.to_lowercase(),
-            hasher.finalize()
-        );
-        let args = vec![
-            "build",
-            "-t",
-            &image_name,
-            "-f",
-            &path.to_str().unwrap(),
-            ".",
-        ];
-        Self::run_docker_command(args)?;
-
-        Ok(image_name)
+        Ok(())
     }
 
     pub async fn create_new_environment(&self) -> Result<(), DockerError> {
+        self.build_dockerfile_if_required()?;
         self.delete_container_if_exists().await?;
         self.create_container()?;
         self.start_container().await?;
@@ -146,12 +100,12 @@ impl DockerHandler {
     pub async fn enter_environment(&self) -> Result<(), DockerError> {
         let mut args = vec!["exec"];
 
-        let options = Self::to_shell(&self.entry_options);
+        let options = Self::to_shell(&self.env.entry_options);
         args.extend(options.iter().map(|s| s.as_str()));
 
-        args.push(&self.name);
+        args.push(&self.env.name);
 
-        let init_cmd = shell_words::split(&self.entry_cmd).unwrap();
+        let init_cmd = shell_words::split(&self.env.entry_cmd).unwrap();
         args.extend_from_slice(&init_cmd.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
 
         let command = format!("{CONTAINER_ENGINE} {}", shell_words::join(&args));
@@ -189,7 +143,7 @@ impl DockerHandler {
 
     pub async fn get_container_info(&self) -> Result<Option<ContainerSummary>, DockerError> {
         let mut filters = HashMap::new();
-        filters.insert("name", vec![self.name.as_str()]);
+        filters.insert("name", vec![self.env.name.as_str()]);
         let options = Some(ListContainersOptions {
             all: true,
             filters,
@@ -219,7 +173,7 @@ impl DockerHandler {
     pub async fn delete_container_if_exists(&self) -> Result<(), DockerError> {
         if self.does_environment_exist().await? {
             self.docker
-                .remove_container(&self.name, None)
+                .remove_container(&self.env.name, None)
                 .await
                 .map_err(docker_err!(StoppingContainer))?;
         }
@@ -228,31 +182,31 @@ impl DockerHandler {
 
     pub async fn start_container(&self) -> Result<(), DockerError> {
         self.docker
-            .start_container(&self.name, None::<StartContainerOptions<String>>)
+            .start_container(&self.env.name, None::<StartContainerOptions<String>>)
             .await
             .map_err(docker_err!(StartingContainer))?;
         Ok(())
     }
 
     fn create_container(&self) -> Result<(), DockerError> {
-        let mut args = vec!["create", "--name", &self.name];
+        let mut args = vec!["create", "--name", &self.env.name];
 
-        let options = Self::to_shell(&self.create_options);
+        let options = Self::to_shell(&self.env.create_options);
         args.extend(options.iter().map(|s| s.as_str()));
 
-        args.push(&self.image);
+        args.push(&self.env.image);
         args.extend_from_slice(&["tail", "-f", "/dev/null"]);
         Self::run_docker_command(args)
     }
 
     fn exec_setup_commands(&self) -> Result<(), DockerError> {
-        for cmd in &self.exec_cmds {
+        for cmd in &self.env.exec_cmds {
             let mut args = vec!["exec"];
 
-            let options = Self::to_shell(&self.exec_options);
+            let options = Self::to_shell(&self.env.exec_options);
             args.extend(options.iter().map(|s| s.as_str()));
 
-            args.push(&self.name);
+            args.push(&self.env.name);
 
             let split_cmd = shell_words::split(cmd).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
@@ -264,14 +218,14 @@ impl DockerHandler {
 
     pub async fn stop_container(&self) -> Result<(), DockerError> {
         self.docker
-            .stop_container(&self.name, Some(StopContainerOptions { t: 0 }))
+            .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
             .await
             .map_err(docker_err!(StoppingContainer))?;
         Ok(())
     }
 
     pub async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
-        let args = vec!["exec", &self.name, "ls", "/dev/pts"];
+        let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
         let output = Self::run_docker_command_with_output(args)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
 
@@ -310,17 +264,5 @@ impl DockerHandler {
 
     fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
         Self::run_docker_command_with_output(args).map(|_| ())
-    }
-}
-
-impl Hash for DockerHandler {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.image.hash(state);
-        self.entry_cmd.hash(state);
-        self.entry_options.hash(state);
-        self.exec_cmds.hash(state);
-        self.exec_options.hash(state);
-        self.create_options.hash(state);
     }
 }

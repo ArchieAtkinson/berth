@@ -1,7 +1,6 @@
 use std::process::exit;
 
 use berth::cli;
-use berth::configuration::TomlEnvironment;
 use berth::errors::AppError;
 use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
 
@@ -26,18 +25,6 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     log4rs::init_config(config)?;
 
     Ok(())
-}
-
-fn find_environment_in_config(
-    configuration: &mut Configuration,
-    name: &str,
-) -> Result<TomlEnvironment, AppError> {
-    match configuration.environments.remove(name) {
-        Some(e) => Ok(e),
-        None => Err(AppError::ProvidedEnvNameNotInConfig {
-            name: name.to_string(),
-        }),
-    }
 }
 
 async fn build(docker: &DockerHandler) -> Result<(), AppError> {
@@ -69,15 +56,9 @@ async fn run() -> Result<(), AppError> {
 
     let config_content =
         std::fs::read_to_string(&app_config.config_path).expect("Failed to read config file");
-    let mut configuration = Configuration::new(&config_content, &app_config.config_path)?;
+    let environment = Configuration::new(&config_content, &app_config)?;
 
-    let name = match &app_config.command {
-        cli::Commands::Up { environment } => environment,
-        cli::Commands::Build { environment } => environment,
-    };
-
-    let env = find_environment_in_config(&mut configuration, &name)?;
-    let docker = DockerHandler::new(env, &name)?;
+    let docker = DockerHandler::new(environment)?;
 
     let result = {
         match &app_config.command {

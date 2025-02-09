@@ -1,15 +1,33 @@
 use std::{
     fs::{self, File},
-    path::Path,
+    path::PathBuf,
 };
 
-use berth::configuration::{ConfigError, Configuration};
+use berth::{
+    cli::{AppConfig, Commands},
+    configuration::{ConfigError, Configuration, Environment},
+};
 use indoc::{formatdoc, indoc};
 use pretty_assertions::assert_eq;
 use tempfile::{NamedTempFile, TempDir};
 use test_utils::TmpEnvVar;
 
 pub mod test_utils;
+
+fn get_environment(
+    config: &str,
+    env: &str,
+    config_path: Option<PathBuf>,
+) -> Result<Environment, ConfigError> {
+    let app_config = AppConfig {
+        config_path: config_path.unwrap_or_default(),
+        command: Commands::Up {
+            environment: env.to_string(),
+        },
+        cleanup: true,
+    };
+    Configuration::new(config, &app_config)
+}
 
 #[test]
 fn basic_configuration_file() {
@@ -22,18 +40,14 @@ fn basic_configuration_file() {
         image = "image2"
         entry_cmd = "init2"
     "#;
-    let envs = Configuration::new(&content, &Path::new(""))
-        .unwrap()
-        .environments;
+    let env1 = get_environment(content, "Env1", None).unwrap();
+    let env2 = get_environment(content, "Env2", None).unwrap();
 
-    assert!(envs.contains_key("Env1"));
-    assert!(envs.contains_key("Env2"));
+    assert_eq!(env1.image, "image1");
+    assert_eq!(env2.image, "image2");
 
-    assert_eq!(envs.get("Env1").unwrap().image, "image1");
-    assert_eq!(envs.get("Env2").unwrap().image, "image2");
-
-    assert_eq!(envs.get("Env1").unwrap().entry_cmd, "init1");
-    assert_eq!(envs.get("Env2").unwrap().entry_cmd, "init2");
+    assert_eq!(env1.entry_cmd, "init1");
+    assert_eq!(env2.entry_cmd, "init2");
 }
 
 #[test]
@@ -42,8 +56,9 @@ fn unknown_field() {
         [environment.Env]
         unknown = "Should Fail"
     "#};
-    let configuration = Configuration::new(&content, &Path::new(""));
-    let err_str = configuration.unwrap_err().to_string();
+
+    let env = get_environment(content, "Env2", None);
+    let err_str = env.unwrap_err().to_string();
     assert_eq!(
         err_str,
         indoc! {
@@ -71,9 +86,8 @@ fn dockerfile_absolute_path() {
         dockerfile_path
     };
 
-    let binding = Configuration::new(&content, &Path::new("")).unwrap();
-    let env = binding.environments.get("Env").unwrap();
-    assert_eq!(env.dockerfile, dockerfile_path);
+    let env = get_environment(&content, "Env", None).unwrap();
+    assert_eq!(env.dockerfile.unwrap(), dockerfile.path());
 
     dockerfile.close().unwrap();
 }
@@ -95,9 +109,9 @@ fn dockerfile_relative_to_config_file() {
         entry_cmd = "hello"
         dockerfile = "dockerfile"
         "#};
-    let binding = Configuration::new(&content, &config_path).unwrap();
-    let env = binding.environments.get("Env").unwrap();
-    assert_eq!(env.dockerfile, docker_path.as_path().to_str().unwrap());
+
+    let env = get_environment(&content, "Env", Some(config_path.to_path_buf())).unwrap();
+    assert_eq!(env.dockerfile.unwrap(), docker_path);
 
     tmp_dir.close().unwrap();
 }
@@ -109,8 +123,7 @@ fn image() {
         entry_cmd = "hello"
         image = "world"
     "#};
-    let binding = Configuration::new(&content, &Path::new("")).unwrap();
-    let env = binding.environments.get("Env").unwrap();
+    let env = get_environment(&content, "Env", None).unwrap();
     assert_eq!(env.image, "world");
 }
 
@@ -120,7 +133,7 @@ fn no_dockerfile_or_image() {
         [environment.Env]
         entry_cmd = "hello"
     "#};
-    let err = Configuration::new(&content, &Path::new("")).unwrap_err();
+    let err = get_environment(&content, "Env", None).unwrap_err();
     assert_eq!(
         err,
         ConfigError::RequireDockerfileOrImage {
@@ -137,7 +150,7 @@ fn both_dockerfile_or_image() {
         image = "world"
         dockerfile = "!"
     "#};
-    let err = Configuration::new(&content, &Path::new("")).unwrap_err();
+    let err = get_environment(&content, "Env", None).unwrap_err();
     assert_eq!(
         err,
         ConfigError::DockerfileOrImage {
@@ -161,9 +174,7 @@ fn env_vars_in_options() {
         var.name()
     );
 
-    let mut configuration = Configuration::new(&content, &Path::new("")).unwrap();
-    let env = configuration.environments.remove("Env").unwrap();
-
+    let env = get_environment(&content, "Env", None).unwrap();
     assert_eq!(&env.create_options[0], &var.value());
     assert_eq!(&env.exec_options[0], &var.value());
     assert_eq!(&env.entry_options[0], &var.value());
