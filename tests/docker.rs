@@ -3,7 +3,7 @@ use color_eyre::Result;
 use indoc::{formatdoc, indoc};
 use std::{collections::HashMap, fs::File, io::Write};
 use tempfile::{NamedTempFile, TempDir};
-use test_utils::{TestHarness, TestOutput, APK_ADD_ARGS};
+use test_utils::{TestHarness, TestOutput, APK_ADD_ARGS, DEFAULT_TIMEOUT};
 
 pub mod test_utils;
 
@@ -42,7 +42,7 @@ fn mount() -> Result<()> {
             container_mount_dir
         ))?
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
         .expect_string(&format!("{file_text}"))?
         .send_line("exit")?
@@ -67,7 +67,7 @@ fn exec_cmds() -> Result<()> {
             APK_ADD_ARGS
         ))?
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line("which asciiquarium")?
         .expect_string("/usr/bin/asciiquarium")?
         .send_line("exit")?
@@ -126,7 +126,7 @@ fn mount_working_dir() -> Result<()> {
         ))?
         .envs(vec![("PWD", tmp_dir.path().to_str().unwrap())])?
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {mounted_file_name}"))?
         .expect_string(&format!("{file_text}"))?
         .send_line("exit")?
@@ -151,7 +151,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             "#,
         ))?
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line("echo $0")?
         .expect_string("/bin/ash")?;
 
@@ -166,7 +166,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             "up",
             &container_name,
         ])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line("echo $0")?
         .expect_string("/bin/ash")?
         .send_line("exit")?
@@ -207,7 +207,7 @@ fn dockerfile() -> Result<()> {
             dockerfile.path().to_str().unwrap(),
         ))?
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
-        .run(5000)?
+        .run(DEFAULT_TIMEOUT)?
         .send_line("which asciiquarium")?
         .expect_string("/usr/bin/asciiquarium")?
         .send_line("exit")?

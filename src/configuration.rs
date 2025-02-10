@@ -29,6 +29,9 @@ pub enum ConfigError {
 
     #[error("Proved environment, '{name}' is not in loaded config")]
     ProvidedEnvNameNotInConfig { name: String },
+
+    #[error("Couldn't read provided dockerfile, '{path}', for hashing")]
+    FailedToInteractWithDockerfile { path: String },
 }
 
 #[derive(Debug, Deserialize, Hash)]
@@ -38,7 +41,7 @@ pub struct TomlEnvironment {
 
     #[serde(default)]
     #[serde(rename = "image")]
-    provide_image: String,
+    provided_image: String,
 
     #[serde(default)]
     dockerfile: String,
@@ -80,10 +83,13 @@ pub struct Environment {
 }
 
 impl Configuration {
-    pub fn new(file: &str, app: &AppConfig) -> Result<Environment, ConfigError> {
+    pub fn find_environment_from_configuration(
+        file: &str,
+        app: &AppConfig,
+    ) -> Result<Environment, ConfigError> {
         match toml::from_str::<TomlConfiguration>(file) {
             Ok(mut config) => {
-                Self::check_toml_environments(&config.environments)?;
+                Self::check_toml_environments_are_valid(&config.environments)?;
                 Ok(Self::create_environment(&mut config.environments, &app)?)
             }
             Err(e) => Err(ConfigError::TomlParse {
@@ -92,9 +98,9 @@ impl Configuration {
         }
     }
 
-    fn check_toml_environments(envs: &TomlEnvs) -> Result<(), ConfigError> {
+    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<(), ConfigError> {
         for (name, env) in envs {
-            match (env.provide_image.is_empty(), env.dockerfile.is_empty()) {
+            match (env.provided_image.is_empty(), env.dockerfile.is_empty()) {
                 (true, true) => {
                     return Err(ConfigError::RequireDockerfileOrImage {
                         environment: name.clone(),
@@ -129,12 +135,12 @@ impl Configuration {
 
         Self::expand_environment_variables(&mut env);
 
-        let (image, dockerfile) = if env.provide_image.is_empty() {
+        let (image, dockerfile) = if env.provided_image.is_empty() {
             let dockerfile_path = Self::parse_dockerfile(&env.dockerfile, &app.config_path)?;
-            let image_name = Self::generate_image_name(&name, &dockerfile_path);
+            let image_name = Self::generate_image_name(&name, &dockerfile_path)?;
             (image_name, Some(dockerfile_path))
         } else {
-            (env.provide_image, None)
+            (env.provided_image, None)
         };
 
         let mut env = Environment {
@@ -172,7 +178,12 @@ impl Configuration {
         let resolved = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            let config_dir = config_path.parent().unwrap();
+            let config_dir =
+                config_path
+                    .parent()
+                    .ok_or(ConfigError::FailedToInteractWithDockerfile {
+                        path: path.display().to_string(),
+                    })?;
             config_dir.join(path)
         };
 
@@ -185,26 +196,32 @@ impl Configuration {
         Ok(PathBuf::from(resolved))
     }
 
-    fn generate_image_name(name: &str, path: &Path) -> String {
-        let path = fs::canonicalize(path).unwrap();
-        let mut file = File::open(&path).unwrap();
+    fn generate_image_name(name: &str, path: &Path) -> Result<String, ConfigError> {
+        let create_error = |path: &Path| -> ConfigError {
+            ConfigError::FailedToInteractWithDockerfile {
+                path: path.display().to_string(),
+            }
+        };
+
+        let path = fs::canonicalize(path).map_err(|_| create_error(&path))?;
+        let mut file = File::open(&path).map_err(|_| create_error(&path))?;
         let mut hasher = Sha256::new();
         let mut buffer = [0; 1024];
 
         loop {
-            let bytes_read = file.read(&mut buffer).unwrap();
+            let bytes_read = file.read(&mut buffer).map_err(|_| create_error(&path))?;
             if bytes_read == 0 {
                 break;
             }
             hasher.update(&buffer[..bytes_read]);
         }
 
-        format!(
+        Ok(format!(
             "{}-{}-{:016x}",
             "berth",
             name.to_lowercase(),
             hasher.finalize()
-        )
+        ))
     }
 
     fn expand_env_vars(vec: &mut Vec<String>) {

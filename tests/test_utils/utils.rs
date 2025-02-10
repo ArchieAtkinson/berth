@@ -4,9 +4,10 @@ use std::env;
 
 pub const BINARY: &str = env!("CARGO_PKG_NAME");
 pub const APK_ADD_ARGS: &str = "-q --no-progress";
+pub const DEFAULT_TIMEOUT: u64 = 10000;
 
 #[ctor]
-fn ctor(){
+fn ctor() {
     color_eyre::install().unwrap();
 }
 

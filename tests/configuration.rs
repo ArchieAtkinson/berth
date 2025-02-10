@@ -26,7 +26,7 @@ fn get_environment(
         },
         cleanup: true,
     };
-    Configuration::new(config, &app_config)
+    Configuration::find_environment_from_configuration(config, &app_config)
 }
 
 #[test]

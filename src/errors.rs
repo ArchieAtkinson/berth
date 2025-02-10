@@ -12,7 +12,4 @@ pub enum AppError {
 
     #[error(transparent)]
     Configuration(#[from] ConfigError),
-
-    #[error("Proved environment, '{name}' is not in loaded config")]
-    ProvidedEnvNameNotInConfig { name: String },
 }
