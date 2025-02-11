@@ -110,7 +110,7 @@ fn dockerfile_relative_to_config_file() {
         dockerfile = "dockerfile"
         "#};
 
-    let env = get_environment(&content, "Env", Some(config_path.to_path_buf())).unwrap();
+    let env = get_environment(content, "Env", Some(config_path.to_path_buf())).unwrap();
     assert_eq!(env.dockerfile.unwrap(), docker_path);
 
     tmp_dir.close().unwrap();
@@ -123,7 +123,7 @@ fn image() {
         entry_cmd = "hello"
         image = "world"
     "#};
-    let env = get_environment(&content, "Env", None).unwrap();
+    let env = get_environment(content, "Env", None).unwrap();
     assert_eq!(env.image, "world");
 }
 
@@ -133,7 +133,7 @@ fn no_dockerfile_or_image() {
         [environment.Env]
         entry_cmd = "hello"
     "#};
-    let err = get_environment(&content, "Env", None).unwrap_err();
+    let err = get_environment(content, "Env", None).unwrap_err();
     assert_eq!(
         err,
         ConfigError::RequireDockerfileOrImage {
@@ -150,7 +150,7 @@ fn both_dockerfile_or_image() {
         image = "world"
         dockerfile = "!"
     "#};
-    let err = get_environment(&content, "Env", None).unwrap_err();
+    let err = get_environment(content, "Env", None).unwrap_err();
     assert_eq!(
         err,
         ConfigError::DockerfileOrImage {

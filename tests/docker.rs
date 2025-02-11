@@ -44,7 +44,7 @@ fn mount() -> Result<()> {
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
-        .expect_string(&format!("{file_text}"))?
+        .expect_string(file_text)?
         .send_line("exit")?
         .expect_terminate()?
         .success()?;
@@ -97,7 +97,7 @@ async fn build() -> Result<()> {
     std::thread::sleep(std::time::Duration::from_secs(1)); // wait for container to stop
 
     let docker = Docker::connect_with_local_defaults().unwrap();
-    assert!(!is_container_running(&docker, &test.name()).await);
+    assert!(!is_container_running(&docker, test.name()).await);
     Ok(())
 }
 
@@ -128,7 +128,7 @@ fn mount_working_dir() -> Result<()> {
         .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {mounted_file_name}"))?
-        .expect_string(&format!("{file_text}"))?
+        .expect_string(file_text)?
         .send_line("exit")?
         .expect_terminate()?
         .success()?;

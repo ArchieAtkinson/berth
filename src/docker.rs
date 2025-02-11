@@ -90,7 +90,7 @@ impl DockerHandler {
         self.exec_setup_commands()
     }
 
-    fn to_shell(strings: &Vec<String>) -> Vec<String> {
+    fn to_shell(strings: &[String]) -> Vec<String> {
         strings
             .iter()
             .flat_map(|s| shell_words::split(s).unwrap())
@@ -163,7 +163,7 @@ impl DockerHandler {
         Ok(self
             .get_container_info()
             .await?
-            .map_or(false, |c| c.state == Some("running".to_string())))
+            .is_some_and(|c| c.state == Some("running".to_string())))
     }
 
     pub async fn does_environment_exist(&self) -> Result<bool, DockerError> {

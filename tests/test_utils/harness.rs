@@ -1,13 +1,7 @@
-
 use color_eyre::{eyre::eyre, Result};
 use expectrl::{Session, WaitStatus};
 use eyre::Context;
-use std::{
-    io::Read,
-    mem,
-    path::Path,
-    time::Duration,
-};
+use std::{io::Read, mem, path::Path, time::Duration};
 
 use crate::test_utils::base::TestBase;
 
@@ -32,42 +26,36 @@ impl TestHarness {
         }
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config(mut self, content: &str) -> Result<Self> {
         self.base.config(content)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
         self.base.config_with_path(content, path)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
         self.base.args(args)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
         self.base.envs(envs)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
         self.base.working_dir(working_dir)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn run(mut self, timeout_ms: u64) -> Result<RunningTestHarness> {
         let command = self.base.create_command()?;
@@ -99,8 +87,13 @@ impl TestHarness {
     }
 }
 
+impl Default for TestHarness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RunningTestHarness {
-    #[must_use]
     #[track_caller]
     pub fn send_line(mut self, cmd: &str) -> Result<Self> {
         self.session
@@ -109,12 +102,11 @@ impl RunningTestHarness {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn expect_string(mut self, expected: &str) -> Result<Self> {
         let mut parsed_expected = expected.trim().to_string();
         for (key, value) in &self.base.replacements {
-            parsed_expected = parsed_expected.replace(key, &value);
+            parsed_expected = parsed_expected.replace(key, value);
         }
 
         self.expect(parsed_expected)?;
@@ -122,7 +114,6 @@ impl RunningTestHarness {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn expect_terminate(mut self) -> Result<TerminatedTestHarness> {
         self.expect(&expectrl::Eof)?;
@@ -147,15 +138,16 @@ impl RunningTestHarness {
         })
     }
 
+    #[must_use]
     pub fn config_path(&self) -> &str {
         self.base.config_path()
     }
 
+    #[must_use]
     pub fn name(&self) -> &str {
         self.base.name()
     }
 
-    #[must_use]
     #[track_caller]
     fn expect<T: expectrl::Needle>(&mut self, expected: T) -> Result<()> {
         match self.session.expect(expected) {
@@ -188,7 +180,6 @@ impl RunningTestHarness {
 }
 
 impl TerminatedTestHarness {
-    #[must_use]
     #[track_caller]
     pub fn success(&self) -> Result<()> {
         match self.wait_status {
@@ -198,7 +189,6 @@ impl TerminatedTestHarness {
         }
     }
 
-    #[must_use]
     #[track_caller]
     pub fn failure(&self, expected_code: i32) -> Result<()> {
         match self.wait_status {

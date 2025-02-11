@@ -1,7 +1,7 @@
-use std::path::Path;
 use color_eyre::{eyre::eyre, Result};
 use eyre::{Context, ContextCompat};
 use pretty_assertions::assert_eq;
+use std::path::Path;
 
 use crate::test_utils::base::TestBase;
 
@@ -22,64 +22,56 @@ impl TestOutput {
         }
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config(mut self, content: &str) -> Result<Self> {
         self.base.config(content)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config_with_path(mut self, content: &str, path: &Path) -> Result<Self> {
         self.base.config_with_path(content, path)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn args(mut self, args: Vec<&str>) -> Result<Self> {
         self.base.args(args)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn envs(mut self, envs: Vec<(&str, &str)>) -> Result<Self> {
         self.base.envs(envs)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn working_dir(mut self, working_dir: &str) -> Result<Self> {
         self.base.working_dir(working_dir)?;
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn stdout(mut self, content: impl Into<String>) -> Result<Self> {
         self.stdout = content.into();
         for (key, value) in &self.base.replacements {
-            self.stdout = self.stderr.replace(key, &value);
+            self.stdout = self.stderr.replace(key, value);
         }
 
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn stderr(mut self, content: impl Into<String>) -> Result<Self> {
         self.stderr = content.into();
         for (key, value) in &self.base.replacements {
-            self.stderr = self.stderr.replace(key, &value);
+            self.stderr = self.stderr.replace(key, value);
         }
 
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn code(mut self, code: i32) -> Result<Self> {
         self.exit_code = code;
@@ -98,7 +90,6 @@ impl TestOutput {
         self.base.name()
     }
 
-    #[must_use]
     #[track_caller]
     pub fn run(&mut self) -> Result<()> {
         let output = self
@@ -117,5 +108,11 @@ impl TestOutput {
         assert_eq!(output_exit_code, self.exit_code);
 
         Ok(())
+    }
+}
+
+impl Default for TestOutput {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -39,7 +39,6 @@ impl TestBase {
         }
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config(&mut self, content: &str) -> Result<&mut Self> {
         let tmp_file =
@@ -53,7 +52,6 @@ impl TestBase {
         self.config_with_path(content, &path)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn config_with_path(&mut self, content: &str, path: &Path) -> Result<&mut Self> {
         fs::write(
@@ -65,7 +63,6 @@ impl TestBase {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn args(&mut self, args: Vec<&str>) -> Result<&mut Self> {
         self.args = args
@@ -81,7 +78,6 @@ impl TestBase {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn envs(&mut self, envs: Vec<(&str, &str)>) -> Result<&mut Self> {
         self.envs.extend(
@@ -92,7 +88,6 @@ impl TestBase {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn working_dir(&mut self, working_dir: &str) -> Result<&mut Self> {
         let full_path = fs::canonicalize(working_dir)
@@ -108,7 +103,6 @@ impl TestBase {
         Ok(self)
     }
 
-    #[must_use]
     #[track_caller]
     pub fn create_command(&mut self) -> Result<Command> {
         let bin_path = assert_cmd::cargo::cargo_bin(BINARY);
@@ -130,14 +124,17 @@ impl TestBase {
 }
 
 impl TestBase {
+    #[must_use]
     pub fn config_path(&self) -> &str {
         self.config_path.to_str().unwrap()
     }
 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    #[must_use]
     fn generate_random_environment_name() -> String {
         const LENGTH: usize = 32;
         let mut rng = thread_rng();
@@ -199,5 +196,11 @@ impl TestBase {
 impl Drop for TestBase {
     fn drop(&mut self) {
         self.drop();
+    }
+}
+
+impl Default for TestBase {
+    fn default() -> Self {
+        Self::new()
     }
 }

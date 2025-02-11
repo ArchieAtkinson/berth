@@ -32,11 +32,11 @@ fn env_name_with_config_in_xdg_config_path() -> Result<()> {
         .join(".config")
         .join("berth")
         .join("config.toml");
-    fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
     TestOutput::new()
         .config_with_path(
-            &indoc!(
+            indoc!(
                 r#"
             image = "alpine:edge"
             entry_cmd = "true"
@@ -63,11 +63,11 @@ fn env_name_with_config_in_home_path() -> Result<()> {
         .join(".config")
         .join("berth")
         .join("config.toml");
-    fs::create_dir_all(&file_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
     TestOutput::new()
         .config_with_path(
-            &indoc!(
+            indoc!(
                 r#"
             image = "alpine:edge"
             entry_cmd = "/bin/ash"
@@ -89,7 +89,7 @@ fn env_name_with_config_in_home_path() -> Result<()> {
 fn env_name_with_no_config_in_env() -> Result<()> {
     // Note: TestOutput doesn't inherit envs
     TestOutput::new()
-        .config(&indoc!(
+        .config(indoc!(
             r#"
             image = "alpine:edge"
             entry_cmd = "/bin/ash"

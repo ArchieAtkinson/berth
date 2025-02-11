@@ -90,7 +90,7 @@ impl Configuration {
         match toml::from_str::<TomlConfiguration>(file) {
             Ok(mut config) => {
                 Self::check_toml_environments_are_valid(&config.environments)?;
-                Ok(Self::create_environment(&mut config.environments, &app)?)
+                Ok(Self::create_environment(&mut config.environments, app)?)
             }
             Err(e) => Err(ConfigError::TomlParse {
                 message: e.to_string(),
@@ -171,7 +171,7 @@ impl Configuration {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
-        let dockerfile = envmnt::expand(&dockerfile, Some(options));
+        let dockerfile = envmnt::expand(dockerfile, Some(options));
 
         let path = Path::new(&dockerfile);
 
@@ -193,7 +193,7 @@ impl Configuration {
             });
         }
 
-        Ok(PathBuf::from(resolved))
+        Ok(resolved)
     }
 
     fn generate_image_name(name: &str, path: &Path) -> Result<String, ConfigError> {
@@ -203,7 +203,7 @@ impl Configuration {
             }
         };
 
-        let path = fs::canonicalize(path).map_err(|_| create_error(&path))?;
+        let path = fs::canonicalize(path).map_err(|_| create_error(path))?;
         let mut file = File::open(&path).map_err(|_| create_error(&path))?;
         let mut hasher = Sha256::new();
         let mut buffer = [0; 1024];
@@ -224,11 +224,11 @@ impl Configuration {
         ))
     }
 
-    fn expand_env_vars(vec: &mut Vec<String>) {
+    fn expand_env_vars(vec: &mut [String]) {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
         vec.iter_mut()
-            .for_each(|s| *s = envmnt::expand(&s, Some(options)));
+            .for_each(|s| *s = envmnt::expand(s, Some(options)));
     }
 }

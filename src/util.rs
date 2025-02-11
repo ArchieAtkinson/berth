@@ -8,7 +8,7 @@ pub struct AppEnvVar {
 impl AppEnvVar {
     pub fn new() -> Self {
         AppEnvVar {
-            vars: env::vars().into_iter().collect(),
+            vars: env::vars().collect(),
         }
     }
 
@@ -19,5 +19,11 @@ impl AppEnvVar {
 
     pub fn var(&self, var: &str) -> Option<&str> {
         self.vars.get(var).map(|v| v.as_str())
+    }
+}
+
+impl Default for AppEnvVar {
+    fn default() -> Self {
+        Self::new()
     }
 }
