@@ -23,13 +23,14 @@ tokio = { version = "1.43", features = ["rt-multi-thread", "io-std", "time", "ma
 futures-util = "0.3"
 tokio-util = "0.7"
 sha2 = "0.10"
+miette = { version = "7.5", features = ["fancy"] }
 
 
 [dev-dependencies]
 ctor = "0.2"
-eyre = "0.6"
-color-eyre = "0.6"
 tempfile = "3"
 pretty_assertions = "1.4"
 strip-ansi-escapes = "0.2"
 expectrl = "0.7"
+eyre = "0.6"
+color-eyre = "0.6"

@@ -217,3 +217,38 @@ fn dockerfile() -> Result<()> {
     dockerfile.close().unwrap();
     Ok(())
 }
+
+#[test]
+fn badly_formed_dockerfile() -> Result<()> {
+    let dockerfile = NamedTempFile::new().unwrap();
+    let content = indoc! {
+    r#"
+    FRO alpine:edge
+    RUN apk add asciiquarium
+    "#};
+    write!(&dockerfile, "{}", content).unwrap();
+
+    TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            dockerfile = "{}"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+            dockerfile.path().to_str().unwrap(),
+        ))?
+        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .run(DEFAULT_TIMEOUT)?
+        // Can't test full output as we don't know the image name
+        .expect_string("Error: cli::container::command::exitcode")?
+        .expect_string("The following command return an error code:")?
+        .expect_string(indoc!(
+            r#"help: #0 building with "default" instance using docker driver"#
+        ))?
+        .expect_terminate()?
+        .failure(1)?;
+
+    dockerfile.close().unwrap();
+    Ok(())
+}

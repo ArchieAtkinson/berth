@@ -1,13 +1,10 @@
-use std::process::exit;
-
 use berth::cli;
-use berth::errors::AppError;
 use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
-
 use log::info;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
+use miette::Result;
 
 fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let file = FileAppender::builder()
@@ -27,7 +24,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn build(docker: &DockerHandler) -> Result<(), AppError> {
+async fn build(docker: &DockerHandler) -> Result<()> {
     docker.create_new_environment().await?;
 
     if docker.is_container_running().await? && !docker.is_anyone_connected().await? {
@@ -37,7 +34,7 @@ async fn build(docker: &DockerHandler) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn up(docker: &DockerHandler) -> Result<(), AppError> {
+async fn up(docker: &DockerHandler) -> Result<()> {
     if !docker.does_environment_exist().await? {
         docker.create_new_environment().await?;
     } else {
@@ -48,7 +45,12 @@ async fn up(docker: &DockerHandler) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn run() -> Result<(), AppError> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    init_logger().expect("Failed to setup logger");
+
+    info!("Start up");
+
     let args = std::env::args_os();
     let app_config = AppConfig::new(args)?;
 
@@ -61,6 +63,8 @@ async fn run() -> Result<(), AppError> {
 
     let docker = DockerHandler::new(environment)?;
 
+    docker.build_dockerfile_if_required()?;
+
     let result = {
         match &app_config.command {
             cli::Commands::Up { environment: _ } => up(&docker).await,
@@ -68,36 +72,17 @@ async fn run() -> Result<(), AppError> {
         }
     };
 
-    match result {
-        Ok(_) => Ok::<(), AppError>(()),
-        Err(e) => {
-            docker.stop_container().await?;
-            return Err(e);
+    if let Err(command_error) = result {
+        if let Err(stop_error) = docker.stop_container().await {
+            return Err(command_error.wrap_err(stop_error))?;
         }
-    }?;
+    }
 
     if app_config.cleanup {
         docker.delete_container_if_exists().await?;
     }
 
-    Ok(())
-}
-
-#[tokio::main]
-async fn main() {
-    init_logger().expect("Failed to setup logger");
-
-    info!("Start up");
-
-    match run().await {
-        Ok(()) => (),
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        }
-    }
-
     info!("Done!");
 
-    exit(0)
+    Ok(())
 }

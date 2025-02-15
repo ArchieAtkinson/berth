@@ -1,0 +1,5 @@
+[environment.Test]
+dockerfile = "simple_docker.dockerfile"
+entry_cmd = "/bin/ash"
+create_options = ["-it"]
+entry_options = ["-it"]

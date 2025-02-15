@@ -1,17 +1,18 @@
 use clap::{Parser, Subcommand};
+use miette::{Diagnostic, Result};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
 pub enum CliError {
-    #[error("{clap_error}")]
-    BadInput { clap_error: String },
+    #[error("{0}")]
+    BadInput(String),
 
-    #[error("Could not find file at 'config-path': {path:?}")]
-    NoConfigAtProvidedPath { path: OsString },
+    #[error("Could not find file at 'config-path': {0:?}")]
+    NoConfigAtProvidedPath(OsString),
 
     #[error("Could not find config file in $XDG_CONFIG_PATH or $HOME")]
     NoConfigInStandardLocation,
@@ -56,18 +57,14 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn new<I, T>(args: I) -> Result<AppConfig, CliError>
+    pub fn new<I, T>(args: I) -> Result<AppConfig>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
         let cli = match Cli::try_parse_from(args) {
             Ok(v) => v,
-            Err(e) => {
-                return Err(CliError::BadInput {
-                    clap_error: e.to_string(),
-                })
-            }
+            Err(e) => return Err(CliError::BadInput(e.to_string()).into()),
         };
 
         Ok(AppConfig {
@@ -77,14 +74,12 @@ impl AppConfig {
         })
     }
 
-    fn set_config_path(config_path: Option<PathBuf>) -> Result<PathBuf, CliError> {
+    fn set_config_path(config_path: Option<PathBuf>) -> Result<PathBuf> {
         if let Some(path) = config_path {
             return if path.exists() && path.is_file() {
                 Ok(path)
             } else {
-                Err(CliError::NoConfigAtProvidedPath {
-                    path: path.as_os_str().into(),
-                })
+                Err(CliError::NoConfigAtProvidedPath(path.as_os_str().into()).into())
             };
         }
 
@@ -108,6 +103,6 @@ impl AppConfig {
             }
         }
 
-        Err(CliError::NoConfigInStandardLocation)
+        Err(CliError::NoConfigInStandardLocation.into())
     }
 }

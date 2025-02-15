@@ -96,7 +96,12 @@ fn env_name_with_no_config_in_env() -> Result<()> {
             "#,
         ))?
         .args(vec!["up", "[name]"])?
-        .stderr("Could not find config file in $XDG_CONFIG_PATH or $HOME\n")?
+        .stderr(indoc!(
+            r#"
+            Error:   × Could not find config file in $XDG_CONFIG_PATH or $HOME
+            
+            "#
+        ))?
         .code(1)?
         .run()
 }

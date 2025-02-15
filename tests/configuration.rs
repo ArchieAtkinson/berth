@@ -8,17 +8,14 @@ use berth::{
     configuration::{ConfigError, Configuration, Environment},
 };
 use indoc::{formatdoc, indoc};
+use miette::Result;
 use pretty_assertions::assert_eq;
 use tempfile::{NamedTempFile, TempDir};
 use test_utils::TmpEnvVar;
 
 pub mod test_utils;
 
-fn get_environment(
-    config: &str,
-    env: &str,
-    config_path: Option<PathBuf>,
-) -> Result<Environment, ConfigError> {
+fn get_environment(config: &str, env: &str, config_path: Option<PathBuf>) -> Result<Environment> {
     let app_config = AppConfig {
         config_path: config_path.unwrap_or_default(),
         command: Commands::Up {
@@ -133,12 +130,14 @@ fn no_dockerfile_or_image() {
         [environment.Env]
         entry_cmd = "hello"
     "#};
-    let err = get_environment(content, "Env", None).unwrap_err();
+    let err = get_environment(content, "Env", None)
+        .unwrap_err()
+        .downcast::<ConfigError>()
+        .unwrap();
+
     assert_eq!(
         err,
-        ConfigError::RequireDockerfileOrImage {
-            environment: "Env".to_string()
-        }
+        ConfigError::RequireDockerfileOrImage("Env".to_string())
     );
 }
 
@@ -150,13 +149,11 @@ fn both_dockerfile_or_image() {
         image = "world"
         dockerfile = "!"
     "#};
-    let err = get_environment(content, "Env", None).unwrap_err();
-    assert_eq!(
-        err,
-        ConfigError::DockerfileOrImage {
-            environment: "Env".to_string()
-        }
-    );
+    let err = get_environment(content, "Env", None)
+        .unwrap_err()
+        .downcast::<ConfigError>()
+        .unwrap();
+    assert_eq!(err, ConfigError::DockerfileOrImage("Env".to_string()));
 }
 
 #[test]

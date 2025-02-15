@@ -1,3 +1,7 @@
+use envmnt::{ExpandOptions, ExpansionType};
+use miette::{Diagnostic, Result};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -5,33 +9,29 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-
-use envmnt::{ExpandOptions, ExpansionType};
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::cli::{AppConfig, Commands};
 
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, PartialEq, Diagnostic)]
 pub enum ConfigError {
-    #[error("{message}")]
-    TomlParse { message: String },
+    #[error("{0}")]
+    TomlParse(String),
 
-    #[error("Environment '{environment}' has specified dockerfile or image")]
-    DockerfileOrImage { environment: String },
+    #[error("Environment '{0}' has specified dockerfile or image")]
+    DockerfileOrImage(String),
 
-    #[error("Environment '{environment}' has not specified a dockerfile or image")]
-    RequireDockerfileOrImage { environment: String },
+    #[error("Environment '{0}' has not specified a dockerfile or image")]
+    RequireDockerfileOrImage(String),
 
-    #[error("Can't find dockerfile at: {path}")]
-    BadDockerfilePath { path: String },
+    #[error("Can't find dockerfile at: {0}")]
+    BadDockerfilePath(String),
 
-    #[error("Proved environment, '{name}' is not in loaded config")]
-    ProvidedEnvNameNotInConfig { name: String },
+    #[error("Proved environment, '{0}' is not in loaded config")]
+    ProvidedEnvNameNotInConfig(String),
 
-    #[error("Couldn't read provided dockerfile, '{path}', for hashing")]
-    FailedToInteractWithDockerfile { path: String },
+    #[error("Couldn't read provided dockerfile, '{0}', for hashing")]
+    FailedToInteractWithDockerfile(String),
 }
 
 #[derive(Debug, Deserialize, Hash)]
@@ -83,34 +83,23 @@ pub struct Environment {
 }
 
 impl Configuration {
-    pub fn find_environment_from_configuration(
-        file: &str,
-        app: &AppConfig,
-    ) -> Result<Environment, ConfigError> {
+    pub fn find_environment_from_configuration(file: &str, app: &AppConfig) -> Result<Environment> {
         match toml::from_str::<TomlConfiguration>(file) {
             Ok(mut config) => {
                 Self::check_toml_environments_are_valid(&config.environments)?;
                 Ok(Self::create_environment(&mut config.environments, app)?)
             }
-            Err(e) => Err(ConfigError::TomlParse {
-                message: e.to_string(),
-            }),
+            Err(e) => Err(ConfigError::TomlParse(e.to_string()).into()),
         }
     }
 
-    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<(), ConfigError> {
+    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<()> {
         for (name, env) in envs {
             match (env.provided_image.is_empty(), env.dockerfile.is_empty()) {
                 (true, true) => {
-                    return Err(ConfigError::RequireDockerfileOrImage {
-                        environment: name.clone(),
-                    })
+                    return Err(ConfigError::RequireDockerfileOrImage(name.clone()).into())
                 }
-                (false, false) => {
-                    return Err(ConfigError::DockerfileOrImage {
-                        environment: name.clone(),
-                    })
-                }
+                (false, false) => return Err(ConfigError::DockerfileOrImage(name.clone()).into()),
                 _ => (),
             }
         }
@@ -118,10 +107,7 @@ impl Configuration {
         Ok(())
     }
 
-    fn create_environment(
-        config: &mut TomlEnvs,
-        app: &AppConfig,
-    ) -> Result<Environment, ConfigError> {
+    fn create_environment(config: &mut TomlEnvs, app: &AppConfig) -> Result<Environment> {
         let name = match app.command.clone() {
             Commands::Up { environment: e } => e,
             Commands::Build { environment: e } => e,
@@ -129,9 +115,7 @@ impl Configuration {
 
         let mut env = config
             .remove(&name)
-            .ok_or(ConfigError::ProvidedEnvNameNotInConfig {
-                name: name.to_string(),
-            })?;
+            .ok_or(ConfigError::ProvidedEnvNameNotInConfig(name.to_string()))?;
 
         Self::expand_environment_variables(&mut env);
 
@@ -167,7 +151,7 @@ impl Configuration {
         Self::expand_env_vars(&mut env.create_options);
     }
 
-    fn parse_dockerfile(dockerfile: &str, config_path: &Path) -> Result<PathBuf, ConfigError> {
+    fn parse_dockerfile(dockerfile: &str, config_path: &Path) -> Result<PathBuf> {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
@@ -181,26 +165,22 @@ impl Configuration {
             let config_dir =
                 config_path
                     .parent()
-                    .ok_or(ConfigError::FailedToInteractWithDockerfile {
-                        path: path.display().to_string(),
-                    })?;
+                    .ok_or(ConfigError::FailedToInteractWithDockerfile(
+                        path.display().to_string(),
+                    ))?;
             config_dir.join(path)
         };
 
         if !resolved.exists() || !resolved.is_file() {
-            return Err(ConfigError::BadDockerfilePath {
-                path: resolved.display().to_string(),
-            });
+            return Err(ConfigError::BadDockerfilePath(resolved.display().to_string()).into());
         }
 
         Ok(resolved)
     }
 
-    fn generate_image_name(name: &str, path: &Path) -> Result<String, ConfigError> {
-        let create_error = |path: &Path| -> ConfigError {
-            ConfigError::FailedToInteractWithDockerfile {
-                path: path.display().to_string(),
-            }
+    fn generate_image_name(name: &str, path: &Path) -> Result<String> {
+        let create_error = |path: &Path| -> miette::Report {
+            ConfigError::FailedToInteractWithDockerfile(path.display().to_string()).into()
         };
 
         let path = fs::canonicalize(path).map_err(|_| create_error(path))?;

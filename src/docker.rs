@@ -5,44 +5,54 @@ use bollard::{
     Docker,
 };
 use log::info;
+use miette::{Diagnostic, Result};
 use std::{
     collections::HashMap,
     process::{Command, Output},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum DockerError {
-    #[error("Failed to connect to docker daemon:\n {:?}", error)]
-    ConnectingToDaemon { error: bollard::errors::Error },
+    #[error("Failed to connect to docker daemon with the following error:\n{0:?}\n")]
+    #[diagnostic(code(cli::daemon), help("Is the Docker daemon running?"))]
+    ConnectingToDaemon(bollard::errors::Error),
 
-    #[error("Failed to list containers:\n {:?}", error)]
-    ListingContainers { error: bollard::errors::Error },
+    #[error("Failed to get container information with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::container::info), help("Is the Docker daemon running?"))]
+    ContainerInfo(bollard::errors::Error),
 
-    #[error("Failed to remove container:\n {:?}", error)]
-    RemovingContainer { error: bollard::errors::Error },
+    #[error("Failed to remove container with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::container::removing), help("Is the Docker daemon running?"))]
+    RemovingContainer(bollard::errors::Error),
 
-    #[error("Failed to start container:\n {:?}", error)]
-    StartingContainer { error: bollard::errors::Error },
+    #[error("Failed to start container with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::container::starting), help("Is the Docker daemon running?"))]
+    StartingContainer(bollard::errors::Error),
 
-    #[error("Failed to stop container:\n {:?}", error)]
-    StoppingContainer { error: bollard::errors::Error },
+    #[error("Failed to stop container with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::container::stopping), help("Is the Docker daemon running?"))]
+    StoppingContainer(bollard::errors::Error),
 
-    #[error("Entering container failed: {reason}")]
-    EnterExecFailure { reason: String },
+    #[error("Entering container failed with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::container::entering))]
+    EnteringContainer(String),
 
-    #[error("The following command return an error code:\n {cmd}\nWith:\n{stderr}")]
-    CommandErrorCode { cmd: String, stderr: String },
+    #[error("The following command return an error code:\n\n{cmd}\n\n")]
+    #[diagnostic(code(cli::container::command::exitcode), help("{stderr}"))]
+    CommandExitCode { cmd: String, stderr: String },
 
-    #[error("The following command failed:\n {cmd}\nDue to an unknown signal")]
-    CommandKilled { cmd: String },
+    #[error("The following command failed due to an unknown signal:\n{0}")]
+    #[diagnostic(code(cli::container::command::killed))]
+    CommandKilled(String),
 
-    #[error("The following command failed to run:\n {cmd}")]
-    CommandFailed { cmd: String },
+    #[error("The following command failed to run:\n{0}")]
+    #[diagnostic(code(cli::container::command::failed))]
+    CommandFailed(String),
 }
 
 macro_rules! docker_err {
     ($variant:ident) => {
-        |error| DockerError::$variant { error }
+        |error| DockerError::$variant(error)
     };
 }
 
@@ -55,7 +65,7 @@ pub struct DockerHandler {
 }
 
 impl DockerHandler {
-    pub fn new(environment: Environment) -> Result<Self, DockerError> {
+    pub fn new(environment: Environment) -> Result<Self> {
         let docker =
             Docker::connect_with_local_defaults().map_err(docker_err!(ConnectingToDaemon))?;
 
@@ -65,16 +75,9 @@ impl DockerHandler {
         })
     }
 
-    pub fn build_dockerfile_if_required(&self) -> Result<(), DockerError> {
-        if self.env.dockerfile.is_some() {
-            let dockerfile_path = self
-                .env
-                .dockerfile
-                .clone()
-                .unwrap()
-                .as_path()
-                .to_string_lossy()
-                .to_string();
+    pub fn build_dockerfile_if_required(&self) -> Result<()> {
+        if let Some(dockerfile) = &self.env.dockerfile {
+            let dockerfile_path = dockerfile.clone().as_path().to_string_lossy().to_string();
             let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
             Self::run_docker_command(args)?;
         }
@@ -82,8 +85,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn create_new_environment(&self) -> Result<(), DockerError> {
-        self.build_dockerfile_if_required()?;
+    pub async fn create_new_environment(&self) -> Result<()> {
         self.delete_container_if_exists().await?;
         self.create_container()?;
         self.start_container().await?;
@@ -97,7 +99,7 @@ impl DockerHandler {
             .collect()
     }
 
-    pub async fn enter_environment(&self) -> Result<(), DockerError> {
+    pub async fn enter_environment(&self) -> Result<()> {
         let mut args = vec!["exec"];
 
         let options = Self::to_shell(&self.env.entry_options);
@@ -115,7 +117,7 @@ impl DockerHandler {
         let exit_code = Command::new(CONTAINER_ENGINE)
             .args(&args)
             .status()
-            .map_err(|_| DockerError::CommandFailed { cmd: command })?
+            .map_err(|_| DockerError::CommandFailed(command))?
             .code();
 
         let error_str = match exit_code {
@@ -129,9 +131,7 @@ impl DockerHandler {
         };
 
         if let Some(error_str) = error_str {
-            return Err(DockerError::EnterExecFailure {
-                reason: error_str.to_string(),
-            });
+            return Err(DockerError::EnteringContainer(error_str.to_string()).into());
         }
 
         if self.is_container_running().await? && !self.is_anyone_connected().await? {
@@ -141,7 +141,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn get_container_info(&self) -> Result<Option<ContainerSummary>, DockerError> {
+    pub async fn get_container_info(&self) -> Result<Option<ContainerSummary>> {
         let mut filters = HashMap::new();
         filters.insert("name", vec![self.env.name.as_str()]);
         let options = Some(ListContainersOptions {
@@ -154,23 +154,23 @@ impl DockerHandler {
             .docker
             .list_containers(options)
             .await
-            .map_err(docker_err!(ListingContainers))?;
+            .map_err(docker_err!(ContainerInfo))?;
 
         Ok(container_list.pop())
     }
 
-    pub async fn is_container_running(&self) -> Result<bool, DockerError> {
+    pub async fn is_container_running(&self) -> Result<bool> {
         Ok(self
             .get_container_info()
             .await?
             .is_some_and(|c| c.state == Some("running".to_string())))
     }
 
-    pub async fn does_environment_exist(&self) -> Result<bool, DockerError> {
+    pub async fn does_environment_exist(&self) -> Result<bool> {
         Ok(self.get_container_info().await?.is_some())
     }
 
-    pub async fn delete_container_if_exists(&self) -> Result<(), DockerError> {
+    pub async fn delete_container_if_exists(&self) -> Result<()> {
         if self.does_environment_exist().await? {
             self.docker
                 .remove_container(&self.env.name, None)
@@ -180,7 +180,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn start_container(&self) -> Result<(), DockerError> {
+    pub async fn start_container(&self) -> Result<()> {
         self.docker
             .start_container(&self.env.name, None::<StartContainerOptions<String>>)
             .await
@@ -188,7 +188,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    fn create_container(&self) -> Result<(), DockerError> {
+    fn create_container(&self) -> Result<()> {
         let mut args = vec!["create", "--name", &self.env.name];
 
         let options = Self::to_shell(&self.env.create_options);
@@ -199,7 +199,7 @@ impl DockerHandler {
         Self::run_docker_command(args)
     }
 
-    fn exec_setup_commands(&self) -> Result<(), DockerError> {
+    fn exec_setup_commands(&self) -> Result<()> {
         for cmd in &self.env.exec_cmds {
             let mut args = vec!["exec"];
 
@@ -216,7 +216,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn stop_container(&self) -> Result<(), DockerError> {
+    pub async fn stop_container(&self) -> Result<()> {
         self.docker
             .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
             .await
@@ -224,7 +224,7 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn is_anyone_connected(&self) -> Result<bool, DockerError> {
+    pub async fn is_anyone_connected(&self) -> Result<bool> {
         let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
         let output = Self::run_docker_command_with_output(args)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
@@ -233,36 +233,28 @@ impl DockerHandler {
         Ok(ps_count > no_connections_ps_count)
     }
 
-    fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output, DockerError> {
+    fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output> {
         let command = format!("{} {}", CONTAINER_ENGINE, shell_words::join(&args));
         info!("{command}");
 
         let output = Command::new(CONTAINER_ENGINE)
             .args(&args)
             .output()
-            .map_err(|_| DockerError::CommandFailed {
-                cmd: command.clone(),
-            })?;
+            .map_err(|_| DockerError::CommandFailed(command.clone()))?;
 
         let status_code = output.status.code();
         match status_code {
-            None => {
-                let err = DockerError::CommandKilled { cmd: command };
-                return Err(err);
+            None => Err(DockerError::CommandKilled(command).into()),
+            Some(0) => Ok(output),
+            Some(_) => Err(DockerError::CommandExitCode {
+                cmd: command,
+                stderr: String::from_utf8(output.stderr.clone()).unwrap(),
             }
-            Some(0) => (),
-            Some(_n) => {
-                let err = DockerError::CommandErrorCode {
-                    cmd: command,
-                    stderr: String::from_utf8(output.stderr.clone()).unwrap(),
-                };
-                return Err(err);
-            }
+            .into()),
         }
-        Ok(output)
     }
 
-    fn run_docker_command(args: Vec<&str>) -> Result<(), DockerError> {
+    fn run_docker_command(args: Vec<&str>) -> Result<()> {
         Self::run_docker_command_with_output(args).map(|_| ())
     }
 }
