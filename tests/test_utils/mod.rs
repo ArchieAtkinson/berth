@@ -1,9 +1,11 @@
 // pub mod test_utils;
+mod base;
+mod config;
 mod harness;
 mod output;
 mod utils;
-mod base;
 
-pub use harness::*;     // This brings TestBase to test_utils::TestBase
+pub use config::*;
+pub use harness::*;
 pub use output::*;
 pub use utils::*;
