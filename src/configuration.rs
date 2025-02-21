@@ -1,5 +1,5 @@
 use envmnt::{ExpandOptions, ExpansionType};
-use miette::{Diagnostic, NamedSource, Result, SourceSpan};
+use miette::{miette, Diagnostic, NamedSource, Result, SourceSpan};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -94,20 +94,64 @@ impl Configuration {
         let file_content =
             fs::read_to_string(&app.config_path).expect("Failed to read config file");
 
-        match toml::from_str::<TomlConfiguration>(&file_content) {
-            Ok(mut config) => {
-                Self::check_toml_environments_are_valid(&config.environments)?;
-                Ok(Self::create_environment(&mut config.environments, app)?)
-            }
-            Err(e) => Err(Self::custom_parse_error(
+        match toml_edit::de::from_str::<TomlConfiguration>(&file_content) {
+            Ok(mut config) => match Self::check_toml_environments_are_valid(&config.environments) {
+                Ok(_) => Ok(Self::create_environment(&mut config.environments, app)?),
+                Err(err) => Err(Self::create_local_error(
+                    err,
+                    &file_content,
+                    &app.config_path,
+                )?),
+            },
+            Err(err) => Err(Self::create_toml_error(
                 &file_content,
                 &app.config_path,
-                &e,
+                &err,
             )),
         }
     }
 
-    fn custom_parse_error(content: &str, file: &Path, error: &toml::de::Error) -> miette::Report {
+    fn create_local_error(
+        error: ConfigError,
+        content: &str,
+        path: &Path,
+    ) -> Result<miette::Report> {
+        let (name, message) = match error {
+            ConfigError::DockerfileOrImage(name) => (
+                name,
+                "An environment can only have an 'image' or 'dockerfile' field",
+            ),
+            ConfigError::RequireDockerfileOrImage(name) => (
+                name,
+                "An environment requires an 'image' or 'dockerfile' field",
+            ),
+            _ => return Err(miette!("Unknown Parse Error")),
+        };
+
+        let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
+
+        if let Some(span) = doc
+            .get("environment")
+            .and_then(|env| env.as_table())
+            .and_then(|table| table.get(&name))
+            .and_then(|item| item.span())
+        {
+            Ok(ConfigError::TomlParse {
+                input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
+                span: span.into(),
+                toml_msg: message.to_string(),
+            }
+            .into())
+        } else {
+            Err(miette!("Unknown Parse Error"))
+        }
+    }
+
+    fn create_toml_error(
+        content: &str,
+        file: &Path,
+        error: &toml_edit::de::Error,
+    ) -> miette::Report {
         let span = error.span().unwrap();
 
         let label_message = match error.message() {
@@ -126,7 +170,7 @@ impl Configuration {
         .into()
     }
 
-    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<()> {
+    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<(), ConfigError> {
         for (name, env) in envs {
             match (env.provided_image.is_empty(), env.dockerfile.is_empty()) {
                 (true, true) => {

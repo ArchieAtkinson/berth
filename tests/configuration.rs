@@ -1,6 +1,6 @@
 use berth::{
     cli::{AppConfig, Commands},
-    configuration::{ConfigError, Configuration, Environment},
+    configuration::{Configuration, Environment},
 };
 use indoc::{formatdoc, indoc};
 use miette::{GraphicalReportHandler, GraphicalTheme, Result};
@@ -268,32 +268,54 @@ fn missing_field_in_config() {
 
 #[test]
 fn no_dockerfile_or_image_in_config() {
-    let err = ConfigTest::new(indoc! {r#"
+    let config = ConfigTest::new(indoc! {r#"
         [environment.Env]
         entry_cmd = "hello"
-    "#})
-    .get_env("Env")
-    .unwrap_err()
-    .downcast::<ConfigError>()
-    .unwrap();
-
+    "#});
+    let err = config.get_env("Env").unwrap_err().render();
     assert_eq!(
         err,
-        ConfigError::RequireDockerfileOrImage("Env".to_string())
+        formatdoc!(
+            r#"
+             configuration::parsing
+
+               × Malformed TOML
+                ╭─[{}:1:1]
+              1 │ ╭─▶ [environment.Env]
+              2 │ ├─▶ entry_cmd = "hello"
+                · ╰──── An environment requires an 'image' or 'dockerfile' field
+                ╰────
+            "#,
+            config.file_path()
+        )
     );
 }
 
 #[test]
 fn both_dockerfile_or_image() {
-    let err = ConfigTest::new(indoc! {r#"
+    let config = ConfigTest::new(indoc! {r#"
         [environment.Env]
         entry_cmd = "hello"
         image = "world"
         dockerfile = "!"
-    "#})
-    .get_env("Env")
-    .unwrap_err()
-    .downcast::<ConfigError>()
-    .unwrap();
-    assert_eq!(err, ConfigError::DockerfileOrImage("Env".to_string()));
+    "#});
+    let err = config.get_env("Env").unwrap_err().render();
+    assert_eq!(
+        err,
+        formatdoc!(
+            r#"
+             configuration::parsing
+
+               × Malformed TOML
+                ╭─[{}:1:1]
+              1 │ ╭─▶ [environment.Env]
+              2 │ │   entry_cmd = "hello"
+              3 │ │   image = "world"
+              4 │ ├─▶ dockerfile = "!"
+                · ╰──── An environment can only have an 'image' or 'dockerfile' field
+                ╰────
+            "#,
+            config.file_path()
+        )
+    );
 }
