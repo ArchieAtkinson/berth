@@ -72,7 +72,7 @@ The all `*_options` field will expand (local) environment variables. `berth` use
 
 ### Container Naming
 
-Containers names are split into three, separated by a `-`:
+Containers names are split into three, separated by a `-`:     
 `berth-Bar-a667d944e9480d0d`
 
 The first part is simple, just `berth` to identify it as created by `berth`.
@@ -83,7 +83,7 @@ The third part is a hash of the environment configurations using `SipHash-1-3`, 
 
 ### Image Naming
 
-If using a dockerfile to provide the image, `berth` will build it and name it in a similar format as the container:
+If using a dockerfile to provide the image, `berth` will build it and name it in a similar format as the container:     
 `berth-test-71a2f882f9065141cbf75a92b2ef7217eb1ec4bb0f85a5cec919c6812e13b814`
 
 With the images tag always `latest`.

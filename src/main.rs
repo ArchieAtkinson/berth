@@ -56,10 +56,7 @@ async fn main() -> Result<()> {
 
     eprintln!("Using config file at {:?}", app_config.config_path);
 
-    let config_content =
-        std::fs::read_to_string(&app_config.config_path).expect("Failed to read config file");
-    let environment =
-        Configuration::find_environment_from_configuration(&config_content, &app_config)?;
+    let environment = Configuration::find_environment_from_configuration(&app_config)?;
 
     let docker = DockerHandler::new(environment)?;
 

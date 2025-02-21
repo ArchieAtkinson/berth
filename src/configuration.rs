@@ -1,5 +1,5 @@
 use envmnt::{ExpandOptions, ExpansionType};
-use miette::{Diagnostic, Result};
+use miette::{Diagnostic, NamedSource, Result, SourceSpan};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,8 +15,15 @@ use crate::cli::{AppConfig, Commands};
 
 #[derive(Debug, Error, PartialEq, Diagnostic)]
 pub enum ConfigError {
-    #[error("{0}")]
-    TomlParse(String),
+    #[error("Malformed TOML")]
+    #[diagnostic(code(configuration::parsing))]
+    TomlParse {
+        toml_msg: String,
+        #[source_code]
+        input: NamedSource<String>,
+        #[label("{toml_msg}")]
+        span: SourceSpan,
+    },
 
     #[error("Environment '{0}' has specified dockerfile or image")]
     DockerfileOrImage(String),
@@ -83,14 +90,40 @@ pub struct Environment {
 }
 
 impl Configuration {
-    pub fn find_environment_from_configuration(file: &str, app: &AppConfig) -> Result<Environment> {
-        match toml::from_str::<TomlConfiguration>(file) {
+    pub fn find_environment_from_configuration(app: &AppConfig) -> Result<Environment> {
+        let file_content =
+            fs::read_to_string(&app.config_path).expect("Failed to read config file");
+
+        match toml::from_str::<TomlConfiguration>(&file_content) {
             Ok(mut config) => {
                 Self::check_toml_environments_are_valid(&config.environments)?;
                 Ok(Self::create_environment(&mut config.environments, app)?)
             }
-            Err(e) => Err(ConfigError::TomlParse(e.to_string()).into()),
+            Err(e) => Err(Self::custom_parse_error(
+                &file_content,
+                &app.config_path,
+                &e,
+            )),
         }
+    }
+
+    fn custom_parse_error(content: &str, file: &Path, error: &toml::de::Error) -> miette::Report {
+        let span = error.span().unwrap();
+
+        let label_message = match error.message() {
+            s if s.contains("missing field") => error.message(),
+            s if s.contains("unknown field") => "Unknown field",
+            s if s.contains("invalid type") => error.message(),
+            s if s.contains("duplicate key") => error.message(),
+            _ => &format!("Unexpected TOML Error {:?}", error.message()),
+        };
+
+        ConfigError::TomlParse {
+            input: NamedSource::new(file.to_str().unwrap(), content.to_string()),
+            span: span.into(),
+            toml_msg: label_message.to_string(),
+        }
+        .into()
     }
 
     fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<()> {
