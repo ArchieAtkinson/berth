@@ -125,3 +125,5 @@ A difference from the container naming convention is that the third part is a `s
   - Convenient macros for defining multi-line strings to be compared with `berth`'s output
 - `rand`
   - For generating random container names
+- `serial_test`
+  - Allows forcing interactive tests to run in serial to prevent overloading docker

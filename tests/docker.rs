@@ -1,6 +1,7 @@
 use bollard::{container::ListContainersOptions, Docker};
 use color_eyre::Result;
 use indoc::{formatdoc, indoc};
+use serial_test::serial;
 use std::{collections::HashMap, fs::File, io::Write};
 use tempfile::{NamedTempFile, TempDir};
 use test_utils::{TestHarness, TestOutput, APK_ADD_ARGS, DEFAULT_TIMEOUT};
@@ -18,6 +19,7 @@ async fn is_container_running(docker: &Docker, name: &str) -> bool {
 }
 
 #[test]
+#[serial]
 fn mount() -> Result<()> {
     let tmp_dir = TempDir::new().unwrap();
 
@@ -54,6 +56,7 @@ fn mount() -> Result<()> {
 }
 
 #[test]
+#[serial]
 fn exec_cmds() -> Result<()> {
     TestHarness::new()
         .config(&formatdoc!(
@@ -102,6 +105,7 @@ async fn build() -> Result<()> {
 }
 
 #[test]
+#[serial]
 fn mount_working_dir() -> Result<()> {
     let tmp_dir = TempDir::new().unwrap();
 
@@ -138,6 +142,7 @@ fn mount_working_dir() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
     let docker = Docker::connect_with_local_defaults().unwrap();
 
@@ -187,6 +192,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
 }
 
 #[test]
+#[serial]
 fn dockerfile() -> Result<()> {
     let dockerfile = NamedTempFile::new().unwrap();
     let content = indoc! {
