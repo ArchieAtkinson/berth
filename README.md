@@ -94,8 +94,8 @@ A difference from the container naming convention is that the third part is a `s
 
 - `clap`
   - Command line parser
-- `toml` and `serde`
- - Toml parser for our configuration file into Rust types
+- `toml_edit` and `serde`
+ - Parsing toml for our configuration file into Rust types
 - `log` and `log4rs`
   - File based logging to help debug without interfering with stdio
 - `envmnt`

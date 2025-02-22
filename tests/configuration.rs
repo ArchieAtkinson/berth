@@ -98,6 +98,69 @@ fn env_vars_in_options() {
 }
 
 #[test]
+fn environment_not_in_config() {
+    let config = ConfigTest::new(indoc! {r#"
+        [environment.Env]
+        image = "image"
+        entry_cmd = "cmd"
+        create_options = ["create options"]
+        exec_options = ["exec option"]
+        entry_options = ["entry option"]
+    "#});
+
+    let err = config.get_env("NotEnv").unwrap_err();
+    assert_eq!(
+        err.render(),
+        formatdoc! {
+        r#"
+         configuration::environment::search
+ 
+           × Environment Not Present
+            ╭─[{}:1:1]
+          1 │ ╭─▶ [environment.Env]
+          2 │ │   image = "image"
+          3 │ │   entry_cmd = "cmd"
+          4 │ │   create_options = ["create options"]
+          5 │ │   exec_options = ["exec option"]
+          6 │ ├─▶ entry_options = ["entry option"]
+            · ╰──── Failed to find provided environment 'NotEnv' in config
+            ╰────
+        "#, config.file_path()
+        }
+    );
+}
+
+#[test]
+fn non_existent_dockerfile() {
+    let config = ConfigTest::new(indoc! {r#"
+        [environment.Env]
+        dockerfile = "/tmp/file_that_is_not_real"
+        entry_cmd = "cmd"
+    "#});
+
+    let err = config.get_env("Env").unwrap_err();
+
+    assert_eq!(
+        err.render(),
+        formatdoc!(
+            r#"
+             configuration::environment::dockerfile
+
+               × Nonexistent Dockerfile
+                ╭─[{}:2:14]
+              1 │ [environment.Env]
+              2 │ dockerfile = "/tmp/file_that_is_not_real"
+                ·              ──────────────┬─────────────
+                ·                            ╰── Could not find dockerfile
+              3 │ entry_cmd = "cmd"
+                ╰────
+            "#,
+            config.file_path()
+        )
+    );
+}
+
+#[test]
 fn invalid_field_type_in_config() {
     let config = ConfigTest::new(indoc! {r#"
         [environment.Env]
@@ -214,9 +277,9 @@ fn no_dockerfile_or_image_in_config() {
         err,
         formatdoc!(
             r#"
-             configuration::parsing
+             configuration::environment::validation
 
-               × Malformed TOML
+               × Malformed Environment
                 ╭─[{}:1:1]
               1 │ ╭─▶ [environment.Env]
               2 │ ├─▶ entry_cmd = "hello"
@@ -241,9 +304,9 @@ fn both_dockerfile_or_image() {
         err,
         formatdoc!(
             r#"
-             configuration::parsing
+             configuration::environment::validation
 
-               × Malformed TOML
+               × Malformed Environment
                 ╭─[{}:1:1]
               1 │ ╭─▶ [environment.Env]
               2 │ │   entry_cmd = "hello"

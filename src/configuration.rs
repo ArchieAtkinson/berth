@@ -18,10 +18,39 @@ pub enum ConfigError {
     #[error("Malformed TOML")]
     #[diagnostic(code(configuration::parsing))]
     TomlParse {
-        toml_msg: String,
+        msg: String,
         #[source_code]
         input: NamedSource<String>,
-        #[label("{toml_msg}")]
+        #[label("{msg}")]
+        span: SourceSpan,
+    },
+
+    #[error("Malformed Environment")]
+    #[diagnostic(code(configuration::environment::validation))]
+    EnvironmentValidation {
+        msg: String,
+        #[source_code]
+        input: NamedSource<String>,
+        #[label("{msg}")]
+        span: SourceSpan,
+    },
+
+    #[error("Environment Not Present")]
+    #[diagnostic(code(configuration::environment::search))]
+    EnvironmentSearch {
+        msg: String,
+        #[source_code]
+        input: NamedSource<String>,
+        #[label("{msg}")]
+        span: SourceSpan,
+    },
+
+    #[error("Nonexistent Dockerfile")]
+    #[diagnostic(code(configuration::environment::dockerfile))]
+    MissingDockerfile {
+        #[source_code]
+        input: NamedSource<String>,
+        #[label("Could not find dockerfile")]
         span: SourceSpan,
     },
 
@@ -91,117 +120,121 @@ pub struct Environment {
 
 impl Configuration {
     pub fn find_environment_from_configuration(app: &AppConfig) -> Result<Environment> {
-        let file_content =
-            fs::read_to_string(&app.config_path).expect("Failed to read config file");
+        let content = fs::read_to_string(&app.config_path).expect("Failed to read config file");
 
-        match toml_edit::de::from_str::<TomlConfiguration>(&file_content) {
-            Ok(mut config) => match Self::check_toml_environments_are_valid(&config.environments) {
-                Ok(_) => Ok(Self::create_environment(&mut config.environments, app)?),
-                Err(err) => Err(Self::create_local_error(
-                    err,
-                    &file_content,
-                    &app.config_path,
-                )?),
-            },
-            Err(err) => Err(Self::create_toml_error(
-                &file_content,
-                &app.config_path,
-                &err,
-            )),
-        }
+        Self::parse_toml(&content, &app.config_path)
+            .and_then(|envs| Self::validate_environments(envs, &content, &app.config_path))
+            .and_then(|envs| Self::create_environment(envs, &content, &app))
     }
 
-    fn create_local_error(
-        error: ConfigError,
-        content: &str,
-        path: &Path,
-    ) -> Result<miette::Report> {
-        let (name, message) = match error {
-            ConfigError::DockerfileOrImage(name) => (
-                name,
-                "An environment can only have an 'image' or 'dockerfile' field",
-            ),
-            ConfigError::RequireDockerfileOrImage(name) => (
-                name,
-                "An environment requires an 'image' or 'dockerfile' field",
-            ),
-            _ => return Err(miette!("Unknown Parse Error")),
+    fn parse_toml(content: &str, path: &Path) -> Result<TomlEnvs> {
+        return match toml_edit::de::from_str::<TomlConfiguration>(&content) {
+            Ok(config) => Ok(config.environments),
+            Err(error) => {
+                let span = error.span().unwrap();
+
+                let label_message = match error.message() {
+                    s if s.contains("missing field") => error.message(),
+                    s if s.contains("unknown field") => "Unknown field",
+                    s if s.contains("invalid type") => error.message(),
+                    s if s.contains("duplicate key") => error.message(),
+                    _ => &format!("Unexpected TOML Error {:?}", error.message()),
+                };
+
+                Err(ConfigError::TomlParse {
+                    input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
+                    span: span.into(),
+                    msg: label_message.to_string(),
+                }
+                .into())
+            }
         };
+    }
 
-        let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
+    fn validate_environments(envs: TomlEnvs, content: &str, path: &Path) -> Result<TomlEnvs> {
+        let create_error = move |env_name: &str, message: &str| -> Result<miette::Report> {
+            let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
 
-        if let Some(span) = doc
-            .get("environment")
-            .and_then(|env| env.as_table())
-            .and_then(|table| table.get(&name))
-            .and_then(|item| item.span())
-        {
-            Ok(ConfigError::TomlParse {
+            let span = doc
+                .get("environment")
+                .and_then(|env| env.as_table())
+                .and_then(|table| table.get(&env_name))
+                .and_then(|item| item.span())
+                .ok_or_else(|| miette!("Unknown Parse Error"))?;
+
+            Ok(ConfigError::EnvironmentValidation {
                 input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
                 span: span.into(),
-                toml_msg: message.to_string(),
+                msg: message.to_string(),
             }
             .into())
-        } else {
-            Err(miette!("Unknown Parse Error"))
-        }
-    }
-
-    fn create_toml_error(
-        content: &str,
-        file: &Path,
-        error: &toml_edit::de::Error,
-    ) -> miette::Report {
-        let span = error.span().unwrap();
-
-        let label_message = match error.message() {
-            s if s.contains("missing field") => error.message(),
-            s if s.contains("unknown field") => "Unknown field",
-            s if s.contains("invalid type") => error.message(),
-            s if s.contains("duplicate key") => error.message(),
-            _ => &format!("Unexpected TOML Error {:?}", error.message()),
         };
 
-        ConfigError::TomlParse {
-            input: NamedSource::new(file.to_str().unwrap(), content.to_string()),
-            span: span.into(),
-            toml_msg: label_message.to_string(),
-        }
-        .into()
-    }
-
-    fn check_toml_environments_are_valid(envs: &TomlEnvs) -> Result<(), ConfigError> {
-        for (name, env) in envs {
+        for (name, env) in &envs {
             match (env.provided_image.is_empty(), env.dockerfile.is_empty()) {
                 (true, true) => {
-                    return Err(ConfigError::RequireDockerfileOrImage(name.clone()).into())
+                    return Err(create_error(
+                        &name,
+                        "An environment requires an 'image' or 'dockerfile' field",
+                    )?)
                 }
-                (false, false) => return Err(ConfigError::DockerfileOrImage(name.clone()).into()),
+                (false, false) => {
+                    return Err(create_error(
+                        &name,
+                        "An environment can only have an 'image' or 'dockerfile' field",
+                    )?)
+                }
                 _ => (),
             }
         }
 
-        Ok(())
+        Ok(envs)
     }
 
-    fn create_environment(config: &mut TomlEnvs, app: &AppConfig) -> Result<Environment> {
+    fn create_environment(
+        mut envs: TomlEnvs,
+        content: &str,
+        app: &AppConfig,
+    ) -> Result<Environment> {
         let name = match app.command.clone() {
             Commands::Up { environment: e } => e,
             Commands::Build { environment: e } => e,
         };
 
-        let mut env = config
-            .remove(&name)
-            .ok_or(ConfigError::ProvidedEnvNameNotInConfig(name.to_string()))?;
+        let mut env = match envs.remove(&name) {
+            Some(env) => env,
+            None => {
+                return Err(ConfigError::EnvironmentSearch {
+                    input: NamedSource::new(app.config_path.to_str().unwrap(), content.to_string()),
+                    span: (0, content.len()).into(),
+                    msg: format!("Failed to find provided environment '{}' in config", &name),
+                }
+                .into())
+            }
+        };
 
-        Self::expand_environment_variables(&mut env);
+        let mut options = ExpandOptions::new();
+        options.expansion_type = Some(ExpansionType::Unix);
 
-        let (image, dockerfile) = if env.provided_image.is_empty() {
-            let dockerfile_path = Self::parse_dockerfile(&env.dockerfile, &app.config_path)?;
-            let image_name = Self::generate_image_name(&name, &dockerfile_path)?;
-            (image_name, Some(dockerfile_path))
-        } else {
-            (env.provided_image, None)
+        [
+            &mut env.entry_options,
+            &mut env.exec_options,
+            &mut env.create_options,
+        ]
+        .iter_mut()
+        .for_each(|vec| {
+            vec.iter_mut()
+                .for_each(|s| *s = envmnt::expand(s, Some(options)))
+        });
+
+        let (image, dockerfile) = match env.provided_image.as_str() {
+            "" => {
+                let dockerfile_path =
+                    Self::validate_dockerfile(&env.dockerfile, content, &name, &app.config_path)?;
+                let image_name = Self::generate_image_name(&name, &dockerfile_path)?;
+                (image_name, Some(dockerfile_path))
+            }
+            _ => (env.provided_image, None),
         };
 
         let mut env = Environment {
@@ -222,13 +255,12 @@ impl Configuration {
         Ok(env)
     }
 
-    fn expand_environment_variables(env: &mut TomlEnvironment) {
-        Self::expand_env_vars(&mut env.entry_options);
-        Self::expand_env_vars(&mut env.exec_options);
-        Self::expand_env_vars(&mut env.create_options);
-    }
-
-    fn parse_dockerfile(dockerfile: &str, config_path: &Path) -> Result<PathBuf> {
+    fn validate_dockerfile(
+        dockerfile: &str,
+        content: &str,
+        env_name: &str,
+        config_path: &Path,
+    ) -> Result<PathBuf> {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
@@ -239,17 +271,32 @@ impl Configuration {
         let resolved = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            let config_dir =
-                config_path
-                    .parent()
-                    .ok_or(ConfigError::FailedToInteractWithDockerfile(
-                        path.display().to_string(),
-                    ))?;
-            config_dir.join(path)
+            config_path
+                .parent()
+                .ok_or_else(|| {
+                    ConfigError::FailedToInteractWithDockerfile(path.display().to_string())
+                })?
+                .join(path)
         };
 
         if !resolved.exists() || !resolved.is_file() {
-            return Err(ConfigError::BadDockerfilePath(resolved.display().to_string()).into());
+            let doc: toml_edit::ImDocument<String> = content
+                .parse()
+                .map_err(|_| miette!("Unknown Parse Error"))?;
+
+            let span = doc
+                .get("environment")
+                .and_then(|env| env.as_table())
+                .and_then(|envs| envs.get(&env_name))
+                .and_then(|env| env.get("dockerfile"))
+                .and_then(|item| item.span())
+                .ok_or_else(|| miette!("Unknown Parse Error"))?;
+
+            return Err(ConfigError::MissingDockerfile {
+                input: NamedSource::new(config_path.to_str().unwrap(), content.to_string()),
+                span: span.into(),
+            }
+            .into());
         }
 
         Ok(resolved)
@@ -279,13 +326,5 @@ impl Configuration {
             name.to_lowercase(),
             hasher.finalize()
         ))
-    }
-
-    fn expand_env_vars(vec: &mut [String]) {
-        let mut options = ExpandOptions::new();
-        options.expansion_type = Some(ExpansionType::Unix);
-
-        vec.iter_mut()
-            .for_each(|s| *s = envmnt::expand(s, Some(options)));
     }
 }
