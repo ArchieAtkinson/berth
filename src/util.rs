@@ -27,3 +27,40 @@ impl Default for AppEnvVar {
         Self::new()
     }
 }
+
+pub trait UnexpectedExt<T> {
+    fn unexpected(self) -> miette::Result<T>;
+}
+
+impl<T, E: std::error::Error + Send + Sync + 'static> UnexpectedExt<T> for Result<T, E> {
+    #[track_caller]
+    fn unexpected(self) -> miette::Result<T> {
+        let location = std::panic::Location::caller();
+        let loc = format!("{}:{}", location.file(), location.line());
+        self.map_err(move |e| {
+            miette::miette!(
+                code = "Unexpected Error, Please create issue on GitHub:",
+                url = "https://github.com/ArchieAtkinson/berth/issues",
+                "Unexpected error at {}: {}",
+                loc,
+                e
+            )
+        })
+    }
+}
+
+impl<T> UnexpectedExt<T> for Option<T> {
+    #[track_caller]
+    fn unexpected(self) -> miette::Result<T> {
+        let location = std::panic::Location::caller();
+        let loc = format!("{}:{}", location.file(), location.line());
+        self.ok_or_else(move || {
+            miette::miette!(
+                code = "Unexpected Error, Please create issue on GitHub:",
+                url = "https://github.com/ArchieAtkinson/berth/issues",
+                "Unexpected None at {}",
+                loc
+            )
+        })
+    }
+}

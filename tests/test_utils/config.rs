@@ -39,7 +39,7 @@ impl ConfigTest {
             cleanup: true,
         };
 
-        Configuration::find_environment_from_configuration(&app_config)
+        Configuration::new(&app_config)?.find_environment_from_configuration()
     }
 
     pub fn file_path(&self) -> &str {

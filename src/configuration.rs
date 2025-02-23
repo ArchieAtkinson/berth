@@ -1,5 +1,5 @@
 use envmnt::{ExpandOptions, ExpansionType};
-use miette::{miette, Diagnostic, LabeledSpan, NamedSource, Result, SourceSpan};
+use miette::{Diagnostic, LabeledSpan, NamedSource, Result, SourceSpan};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -7,11 +7,15 @@ use std::{
     fs::{self, File},
     hash::{DefaultHasher, Hash, Hasher},
     io::Read,
+    ops::Range,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 
-use crate::cli::{AppConfig, Commands};
+use crate::{
+    cli::{AppConfig, Commands},
+    util::UnexpectedExt,
+};
 
 #[derive(Debug, Error, PartialEq, Diagnostic)]
 pub enum ConfigError {
@@ -48,9 +52,10 @@ pub enum ConfigError {
     #[error("Nonexistent Dockerfile")]
     #[diagnostic(code(configuration::environment::dockerfile))]
     InvalidDockerfilePath {
+        msg: String,
         #[source_code]
         input: NamedSource<String>,
-        #[label("Could not find dockerfile")]
+        #[label("{msg}")]
         span: SourceSpan,
     },
 
@@ -75,6 +80,19 @@ pub enum ConfigError {
 
     #[error("Couldn't read provided dockerfile, '{0}', for hashing")]
     FailedToInteractWithDockerfile(String),
+}
+
+macro_rules! labeled_error {
+    ($self:expr, $type: ident, $span:expr, $msg:expr) => {
+        ConfigError::$type {
+            input: NamedSource::new(
+                $self.app.config_path.to_str().unwrap(),
+                $self.content.to_string(),
+            ),
+            span: $span.into(),
+            msg: $msg.to_string(),
+        }
+    };
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,8 +162,6 @@ pub struct TomlConfiguration {
     pub presets: TomlPresets,
 }
 
-pub struct Configuration {}
-
 #[derive(Hash, Debug)]
 pub struct Environment {
     pub name: String,
@@ -158,21 +174,37 @@ pub struct Environment {
     pub create_options: Vec<String>,
 }
 
-impl Configuration {
-    pub fn find_environment_from_configuration(app: &AppConfig) -> Result<Environment> {
-        let content = fs::read_to_string(&app.config_path).expect("Failed to read config file");
+pub struct Configuration {
+    content: String,
+    app: AppConfig,
+    doc: Option<toml_edit::ImDocument<String>>,
+}
 
-        Self::parse_toml(&content, &app.config_path)
-            .and_then(|config| Self::check_presets_exist(config, &content, &app.config_path))
-            .and_then(|config| Self::valid_unique_fields(config, &content, &app.config_path))
-            .and_then(|config| Self::merge_presets(config))
-            .and_then(|envs| Self::validate_environments(envs, &content, &app.config_path))
-            .and_then(|envs| Self::create_environment(envs, &content, &app))
+impl Configuration {
+    pub fn new(app: &AppConfig) -> Result<Self> {
+        let content = fs::read_to_string(&app.config_path).unexpected()?;
+        Ok(Self {
+            content,
+            app: app.clone(),
+            doc: None,
+        })
     }
 
-    fn parse_toml(content: &str, path: &Path) -> Result<TomlConfiguration> {
-        return match toml_edit::de::from_str::<TomlConfiguration>(&content) {
-            Ok(config) => Ok(config),
+    pub fn find_environment_from_configuration(mut self) -> Result<Environment> {
+        self.parse_toml()
+            .and_then(|config| self.check_presets_exist(config))
+            .and_then(|config| self.valid_unique_fields(config))
+            .and_then(|config| self.merge_presets(config))
+            .and_then(|envs| self.validate_environments(envs))
+            .and_then(|envs| self.create_environment(envs))
+    }
+
+    fn parse_toml(&mut self) -> Result<TomlConfiguration> {
+        return match toml_edit::de::from_str::<TomlConfiguration>(&self.content) {
+            Ok(config) => {
+                self.doc = Some(self.content.parse().unexpected()?);
+                Ok(config)
+            }
             Err(error) => {
                 let span = error.span().unwrap();
 
@@ -184,26 +216,19 @@ impl Configuration {
                     _ => &format!("Unexpected TOML Error {:?}", error.message()),
                 };
 
-                Err(ConfigError::TomlParse {
-                    input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
-                    span: span.into(),
-                    msg: label_message.to_string(),
-                }
-                .into())
+                Err(labeled_error!(self, TomlParse, span, label_message).into())
             }
         };
     }
 
-    fn check_presets_exist(
-        config: TomlConfiguration,
-        content: &str,
-        path: &Path,
-    ) -> Result<TomlConfiguration> {
-        let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
+    fn check_presets_exist(&self, config: TomlConfiguration) -> Result<TomlConfiguration> {
         for (env_name, env) in &config.environments {
             for preset_name in &env.presets {
                 if config.presets.get(preset_name).is_none() {
-                    match doc
+                    let span = self
+                        .doc
+                        .as_ref()
+                        .unexpected()?
                         .get("environment")
                         .and_then(|env| env.as_table())
                         .and_then(|table| table.get(&env_name))
@@ -214,51 +239,42 @@ impl Configuration {
                                 .iter()
                                 .find(|v| v.as_str() == Some(&preset_name))
                                 .and_then(|value| value.span())
-                        }) {
-                        Some(span) => {
-                            return Err(ConfigError::UnknownPreset {
-                                msg: "Failed to find provided preset".to_string(),
-                                input: NamedSource::new(
-                                    path.to_str().unwrap(),
-                                    content.to_string(),
-                                ),
-                                span: span.into(),
-                            }
-                            .into())
-                        }
-                        None => return Err(miette!("Unknown error merging presets")),
-                    }
+                        })
+                        .unexpected()?;
+                    return Err(labeled_error!(
+                        self,
+                        UnknownPreset,
+                        span,
+                        "Failed to find provided preset"
+                    )
+                    .into());
                 }
             }
         }
         Ok(config)
     }
 
-    fn valid_unique_fields(
-        config: TomlConfiguration,
-        content: &str,
-        path: &Path,
-    ) -> Result<TomlConfiguration> {
-        let check_unique = |field: &str, env: &TomlEnvironment, env_name: &str| {
-            let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
+    fn valid_unique_fields(&self, config: TomlConfiguration) -> Result<TomlConfiguration> {
+        let find_fields_span = |table: &str, name: &str, field: &str| -> Result<SourceSpan> {
+            let span = self
+                .doc
+                .as_ref()
+                .unexpected()?
+                .get(table)
+                .and_then(|envs_item| envs_item.as_table())
+                .and_then(|envs_table| envs_table.get(name))
+                .and_then(|env_item| env_item.as_table())
+                .and_then(|env_table| env_table.get_key_value(field))
+                .map(|(key, value)| {
+                    let key_span = key.span().unwrap();
+                    let value_span = value.span().unwrap();
+                    key_span.start..value_span.end
+                })
+                .unexpected()?;
+            Ok(span.into())
+        };
 
-            let find_fields_span = |table: &str, name: &str, field: &str| -> Result<SourceSpan> {
-                match doc
-                    .get(table)
-                    .and_then(|envs_item| envs_item.as_table())
-                    .and_then(|envs_table| envs_table.get(name))
-                    .and_then(|env_item| env_item.as_table())
-                    .and_then(|env_table| env_table.get_key_value(field))
-                    .map(|(key, value)| {
-                        let key_span = key.span().unwrap();
-                        let value_span = value.span().unwrap();
-                        key_span.start..value_span.end
-                    }) {
-                    Some(span) => Ok(span.into()),
-                    None => Err(miette!("Unexpected parsing error1")),
-                }
-            };
-
+        let check_unique = |field: &str, env: &TomlEnvironment, env_name: &str| -> Result<()> {
             let mut spans: Vec<LabeledSpan> = Vec::new();
 
             let is_env_field_preset = match field {
@@ -275,10 +291,12 @@ impl Configuration {
                 spans.push(labeled_span);
             }
 
-            let mut sorted_names: Vec<_> = config.presets.keys().collect();
-            sorted_names.sort();
+            // Using sorted preset names isn't required but helps testings as the
+            // the HashMap doesn't guarantee the order
+            let mut sorted_preset_names: Vec<_> = config.presets.keys().collect();
+            sorted_preset_names.sort();
 
-            for preset_name in sorted_names {
+            for preset_name in sorted_preset_names {
                 let is_preset_field_preset = match field {
                     "entry_cmd" => !config.presets[preset_name].entry_cmd.is_empty(),
                     "image" => !config.presets[preset_name].provided_image.is_empty(),
@@ -294,32 +312,39 @@ impl Configuration {
                 }
             }
 
-            if spans.len() >= 2 {
-                match doc
+            // If we more than 1 span, then we have duplicate fields
+            // if zero, then non are present which is fine for some fields
+            // and is handled later.
+            if spans.len() > 1 {
+                let span = self
+                    .doc
+                    .as_ref()
+                    .unexpected()?
                     .get("environment")
                     .and_then(|env| env.as_table())
                     .and_then(|table| table.get(&env_name))
                     .and_then(|item| item.get("presets"))
                     .and_then(|item| item.span())
-                {
-                    Some(span) => {
-                        let labeled_span = LabeledSpan::new_with_span(
-                            Some(format!("Preset(s) causing duplicate '{field}' field")),
-                            span,
-                        );
-                        spans.push(labeled_span);
-                    }
-                    None => return Err(miette!("Unexpected parsing error")),
-                }
+                    .unexpected()?;
+
+                let labeled_span = LabeledSpan::new_with_span(
+                    Some(format!("Preset(s) causing duplicate '{field}' field")),
+                    span,
+                );
+                spans.push(labeled_span);
 
                 return Err(ConfigError::DuplicateFieldsFromPresets {
-                    input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
+                    input: NamedSource::new(
+                        self.app.config_path.to_str().unwrap(),
+                        self.content.to_string(),
+                    ),
                     spans,
                 }
                 .into());
             }
             Ok(())
         };
+
         for (env_name, env) in &config.environments {
             check_unique("entry_cmd", env, env_name)?;
             check_unique("image", env, env_name)?;
@@ -328,13 +353,10 @@ impl Configuration {
         Ok(config)
     }
 
-    fn merge_presets(mut config: TomlConfiguration) -> Result<TomlEnvs> {
+    fn merge_presets(&self, mut config: TomlConfiguration) -> Result<TomlEnvs> {
         for (_, env) in config.environments.iter_mut() {
             for preset_name in env.presets.iter_mut() {
-                let preset = config
-                    .presets
-                    .get(preset_name)
-                    .ok_or_else(|| miette!("Unexpected Error"))?;
+                let preset = config.presets.get(preset_name).unexpected()?;
 
                 if !preset.entry_cmd.is_empty() {
                     env.entry_cmd = preset.entry_cmd.clone();
@@ -355,46 +377,50 @@ impl Configuration {
         Ok(config.environments)
     }
 
-    fn validate_environments(envs: TomlEnvs, content: &str, path: &Path) -> Result<TomlEnvs> {
-        let create_error = move |env_name: &str, message: &str| -> Result<miette::Report> {
-            let doc: toml_edit::ImDocument<String> = content.parse().unwrap();
-
-            let span = doc
+    fn validate_environments(&self, envs: TomlEnvs) -> Result<TomlEnvs> {
+        let get_span = move |env_name: &str| -> Result<Range<usize>> {
+            Ok(self
+                .doc
+                .as_ref()
+                .unexpected()?
                 .get("environment")
                 .and_then(|env| env.as_table())
                 .and_then(|table| table.get(&env_name))
                 .and_then(|item| item.span())
-                .ok_or_else(|| miette!("Unknown Parse Error"))?;
-
-            Ok(ConfigError::EnvironmentValidation {
-                input: NamedSource::new(path.to_str().unwrap(), content.to_string()),
-                span: span.into(),
-                msg: message.to_string(),
-            }
-            .into())
+                .unexpected()?)
         };
 
         for (name, env) in &envs {
             if env.entry_cmd.is_empty() {
-                return Err(create_error(
-                    &name,
-                    "An environment requires a 'entry_cmd' field",
-                )?);
+                return Err(labeled_error!(
+                    self,
+                    EnvironmentValidation,
+                    get_span(&name)?,
+                    "An environment requires a 'entry_cmd' field"
+                )
+                .into());
             }
 
             match (env.provided_image.is_empty(), env.dockerfile.is_empty()) {
                 (true, true) => {
-                    return Err(create_error(
-                        &name,
-                        "An environment requires an 'image' or 'dockerfile' field",
-                    )?)
+                    return Err(labeled_error!(
+                        self,
+                        EnvironmentValidation,
+                        get_span(&name)?,
+                        "An environment requires an 'image' or 'dockerfile' field"
+                    )
+                    .into())
                 }
                 (false, false) => {
-                    return Err(create_error(
-                        &name,
-                        "An environment can only have an 'image' or 'dockerfile' field",
-                    )?)
+                    return Err(labeled_error!(
+                        self,
+                        EnvironmentValidation,
+                        get_span(&name)?,
+                        "An environment can only have an 'image' or 'dockerfile' field"
+                    )
+                    .into())
                 }
+
                 _ => (),
             }
         }
@@ -402,12 +428,8 @@ impl Configuration {
         Ok(envs)
     }
 
-    fn create_environment(
-        mut envs: TomlEnvs,
-        content: &str,
-        app: &AppConfig,
-    ) -> Result<Environment> {
-        let name = match app.command.clone() {
+    fn create_environment(&self, mut envs: TomlEnvs) -> Result<Environment> {
+        let name = match self.app.command.clone() {
             Commands::Up { environment: e } => e,
             Commands::Build { environment: e } => e,
         };
@@ -415,11 +437,12 @@ impl Configuration {
         let mut env = match envs.remove(&name) {
             Some(env) => env,
             None => {
-                return Err(ConfigError::EnvironmentSearch {
-                    input: NamedSource::new(app.config_path.to_str().unwrap(), content.to_string()),
-                    span: (0, content.len()).into(),
-                    msg: format!("Failed to find provided environment '{}' in config", &name),
-                }
+                return Err(labeled_error!(
+                    self,
+                    EnvironmentSearch,
+                    (0, self.content.len()),
+                    format!("Failed to find provided environment '{}' in config", &name)
+                )
                 .into())
             }
         };
@@ -440,8 +463,7 @@ impl Configuration {
 
         let (image, dockerfile) = match env.provided_image.as_str() {
             "" => {
-                let dockerfile_path =
-                    Self::validate_dockerfile(&env.dockerfile, content, &name, &app.config_path)?;
+                let dockerfile_path = self.validate_dockerfile(&env.dockerfile, &name)?;
                 let image_name = Self::generate_image_name(&name, &dockerfile_path)?;
                 (image_name, Some(dockerfile_path))
             }
@@ -466,12 +488,7 @@ impl Configuration {
         Ok(env)
     }
 
-    fn validate_dockerfile(
-        dockerfile: &str,
-        content: &str,
-        env_name: &str,
-        config_path: &Path,
-    ) -> Result<PathBuf> {
+    fn validate_dockerfile(&self, dockerfile: &str, env_name: &str) -> Result<PathBuf> {
         let mut options = ExpandOptions::new();
         options.expansion_type = Some(ExpansionType::Unix);
 
@@ -482,7 +499,8 @@ impl Configuration {
         let resolved = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            config_path
+            self.app
+                .config_path
                 .parent()
                 .ok_or_else(|| {
                     ConfigError::FailedToInteractWithDockerfile(path.display().to_string())
@@ -491,22 +509,23 @@ impl Configuration {
         };
 
         if !resolved.exists() || !resolved.is_file() {
-            let doc: toml_edit::ImDocument<String> = content
-                .parse()
-                .map_err(|_| miette!("Unknown Parse Error"))?;
-
-            let span = doc
+            let span = self
+                .doc
+                .as_ref()
+                .unexpected()?
                 .get("environment")
                 .and_then(|env| env.as_table())
                 .and_then(|envs| envs.get(&env_name))
                 .and_then(|env| env.get("dockerfile"))
                 .and_then(|item| item.span())
-                .ok_or_else(|| miette!("Unknown Parse Error"))?;
+                .unexpected()?;
 
-            return Err(ConfigError::InvalidDockerfilePath {
-                input: NamedSource::new(config_path.to_str().unwrap(), content.to_string()),
-                span: span.into(),
-            }
+            return Err(labeled_error!(
+                self,
+                InvalidDockerfilePath,
+                span,
+                "Could not find dockerfile"
+            )
             .into());
         }
 

@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
     eprintln!("Using config file at {:?}", app_config.config_path);
 
-    let environment = Configuration::find_environment_from_configuration(&app_config)?;
+    let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
     let docker = DockerHandler::new(environment)?;
 

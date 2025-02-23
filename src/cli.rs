@@ -50,6 +50,7 @@ pub enum Commands {
     },
 }
 
+#[derive(Clone)]
 pub struct AppConfig {
     pub config_path: PathBuf,
     pub command: Commands,
