@@ -31,6 +31,64 @@ fn multiple_envs_in_config() {
 }
 
 #[test]
+fn simple_preset() {
+    let config = ConfigTest::new(
+        r#"
+        [preset.Preset]
+        image = "image"
+        entry_cmd = "init"
+        entry_options = ["entry_options"]
+        exec_options = ["exec_options"]
+        create_options = ["create_options"]
+
+        [environment.Env]
+        presets = ["Preset"]
+    "#,
+    );
+
+    let env1 = config.get_env("Env").unwrap();
+
+    assert_eq!(env1.image, "image");
+    assert_eq!(env1.entry_cmd, "init");
+    assert_eq!(env1.entry_options, vec!["entry_options"]);
+    assert_eq!(env1.exec_options, vec!["exec_options"]);
+    assert_eq!(env1.create_options, vec!["create_options"]);
+}
+
+#[test]
+fn multiple_preset() {
+    let config = ConfigTest::new(
+        r#"
+        [preset.Preset1]
+        image = "image1"
+        entry_options = ["entry_options1"]
+        exec_options = ["exec_options1"]
+        create_options = ["create_options1"]
+
+        [preset.Preset2]
+        entry_cmd = "init2"
+        entry_options = ["entry_options2"]
+        exec_options = ["exec_options2"]
+        create_options = ["create_options2"]
+
+        [environment.Env]
+        presets = ["Preset1", "Preset2"]
+    "#,
+    );
+
+    let env = config.get_env("Env").unwrap();
+
+    assert_eq!(env.image, "image1");
+    assert_eq!(env.entry_cmd, "init2");
+    assert_eq!(env.entry_options, vec!["entry_options1", "entry_options2"]);
+    assert_eq!(env.exec_options, vec!["exec_options1", "exec_options2"]);
+    assert_eq!(
+        env.create_options,
+        vec!["create_options1", "create_options2"]
+    );
+}
+
+#[test]
 fn dockerfile_absolute_path() {
     let dockerfile = NamedTempFile::new().expect("Failed to create temporary file for config");
     let dockerfile_path = dockerfile.path().to_str().unwrap();
@@ -253,13 +311,13 @@ fn missing_field_in_config() {
         err.render(),
         formatdoc! {
         r#"
-          configuration::parsing
+          configuration::environment::validation
  
-            × Malformed TOML
+            × Malformed Environment
              ╭─[{}:1:1]
            1 │ ╭─▶ [environment.Env]
            2 │ ├─▶ image = "1"
-             · ╰──── missing field `entry_cmd`
+             · ╰──── An environment requires a 'entry_cmd' field
              ╰────
         "#, config.file_path()
         }
@@ -314,6 +372,89 @@ fn both_dockerfile_or_image() {
               4 │ ├─▶ dockerfile = "!"
                 · ╰──── An environment can only have an 'image' or 'dockerfile' field
                 ╰────
+            "#,
+            config.file_path()
+        )
+    );
+}
+
+#[test]
+fn preset_not_found() {
+    let config = ConfigTest::new(indoc! {r#"
+        [preset.preset]
+        entry_options = ["a"]
+        
+        [environment.Env]
+        entry_cmd = "hello"
+        image = "world"
+        presets = ["preset", "different_preset"]
+    "#});
+    let err = config.get_env("Env").unwrap_err().render();
+    assert_eq!(
+        err,
+        formatdoc!(
+            r#"
+             configuration::preset::unknown
+ 
+               × Unknown Preset
+                ╭─[{}:7:22]
+              6 │ image = "world"
+              7 │ presets = ["preset", "different_preset"]
+                ·                      ─────────┬────────
+                ·                               ╰── Failed to find provided preset
+                ╰────
+            "#,
+            config.file_path()
+        )
+    );
+}
+
+#[test]
+fn multiple_unique_fields_from_presets() {
+    let config = ConfigTest::new(
+        r#"
+        [preset.Preset1]
+        image = "image1"
+
+        [preset.Preset2]
+        image = "image2"
+
+        [environment.Env]
+        image = "image"
+        entry_cmd = "init"
+        presets = ["Preset1", "Preset2"]
+    "#,
+    );
+
+    let err = config.get_env("Env").unwrap_err().render();
+    assert_eq!(
+        err,
+        formatdoc!(
+            r#"
+             configuration::preset::duplication
+ 
+               × Duplicate Fields From Presets
+                 ╭─[{}:3:9]
+               2 │         [preset.Preset1]
+               3 │         image = "image1"
+                 ·         ────────┬───────
+                 ·                 ╰── instance 2
+               4 │ 
+               5 │         [preset.Preset2]
+               6 │         image = "image2"
+                 ·         ────────┬───────
+                 ·                 ╰── instance 3
+               7 │ 
+               8 │         [environment.Env]
+               9 │         image = "image"
+                 ·         ───────┬───────
+                 ·                ╰── instance 1
+              10 │         entry_cmd = "init"
+              11 │         presets = ["Preset1", "Preset2"]
+                 ·                   ───────────┬──────────
+                 ·                              ╰── Preset(s) causing duplicate 'image' field
+              12 │     
+                 ╰────
             "#,
             config.file_path()
         )

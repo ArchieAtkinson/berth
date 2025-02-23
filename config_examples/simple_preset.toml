@@ -1,0 +1,8 @@
+[preset.interactive]
+create_options = ["-it"]
+entry_options = ["-it"]
+
+[environment.example]
+image = "alpine:edge"
+entry_cmd = "/bin/ash"
+presets = ["interactive"]
