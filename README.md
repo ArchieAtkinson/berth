@@ -218,6 +218,8 @@ A difference from the container naming convention is that the third part is a `s
   - Provides pretty, well defined errors
 - `bollard` (requires `tokio` and `tokio-utils`)
   - Programmaic way to interact with docker
+- `indicatif`
+  - Progress spinners
     
 ### Development Dependencies
 

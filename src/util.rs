@@ -1,4 +1,6 @@
-use std::{collections::HashMap, env};
+use std::{collections::HashMap, env, time::Duration};
+
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Debug)]
 pub struct AppEnvVar {
@@ -25,6 +27,28 @@ impl AppEnvVar {
 impl Default for AppEnvVar {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct Spinner {
+    spinner: ProgressBar,
+}
+
+impl Spinner {
+    pub fn new(message: &'static str) -> Self {
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_message(message);
+        spinner.enable_steady_tick(Duration::from_millis(200));
+        let spinner = spinner.with_style(
+            ProgressStyle::with_template("{msg}{spinner}")
+                .unwrap()
+                .tick_strings(&["", ".", "..", "...", "..."]),
+        );
+        Spinner { spinner }
+    }
+
+    pub fn finish_and_clear(self) {
+        self.spinner.finish_and_clear();
     }
 }
 

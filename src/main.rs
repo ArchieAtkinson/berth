@@ -1,4 +1,5 @@
 use berth::cli;
+use berth::util::Spinner;
 use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
 use log::info;
 use log4rs::append::file::FileAppender;
@@ -26,10 +27,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn build(docker: &DockerHandler) -> Result<()> {
     docker.create_new_environment().await?;
-
-    if docker.is_container_running().await? && !docker.is_anyone_connected().await? {
-        docker.stop_container().await?;
-    }
+    docker.stop_container().await?;
 
     Ok(())
 }
@@ -38,7 +36,11 @@ async fn up(docker: &DockerHandler) -> Result<()> {
     if !docker.does_environment_exist().await? {
         docker.create_new_environment().await?;
     } else {
+        let spinner = Spinner::new("Starting Container");
+
         docker.start_container().await?;
+
+        spinner.finish_and_clear();
     }
     docker.enter_environment().await?;
 
@@ -59,8 +61,6 @@ async fn main() -> Result<()> {
     let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
     let docker = DockerHandler::new(environment)?;
-
-    docker.build_dockerfile_if_required()?;
 
     let result = {
         match &app_config.command {

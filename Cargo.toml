@@ -18,7 +18,7 @@ tokio = { version = "1.43", features = ["rt-multi-thread", "io-std", "time", "ma
 tokio-util = "0.7"
 sha2 = "0.10"
 miette = { version = "7.5", features = ["fancy"] }
-
+indicatif = "0.17"
 
 [dev-dependencies]
 assert_cmd = "2.0"

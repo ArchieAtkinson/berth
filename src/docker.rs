@@ -1,6 +1,7 @@
-use crate::configuration::Environment;
+use crate::{configuration::Environment, util::Spinner, UnexpectedExt};
 use bollard::{
     container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
+    image::ListImagesOptions,
     secret::ContainerSummary,
     Docker,
 };
@@ -20,6 +21,10 @@ pub enum DockerError {
     #[error("Failed to get container information with the following error:\n{0}\n")]
     #[diagnostic(code(cli::container::info), help("Is the Docker daemon running?"))]
     ContainerInfo(bollard::errors::Error),
+
+    #[error("Failed to get image information with the following error:\n{0}\n")]
+    #[diagnostic(code(cli::image::info), help("Is the Docker daemon running?"))]
+    ImageInfo(bollard::errors::Error),
 
     #[error("Failed to remove container with the following error:\n{0}\n")]
     #[diagnostic(code(cli::container::removing), help("Is the Docker daemon running?"))]
@@ -75,21 +80,60 @@ impl DockerHandler {
         })
     }
 
-    pub fn build_dockerfile_if_required(&self) -> Result<()> {
-        if let Some(dockerfile) = &self.env.dockerfile {
-            let dockerfile_path = dockerfile.clone().as_path().to_string_lossy().to_string();
-            let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
-            Self::run_docker_command(args)?;
+    async fn does_image_need_building(&self) -> Result<bool> {
+        if self.env.dockerfile.is_some() {
+            let mut filters = HashMap::new();
+            filters.insert("reference", vec![self.env.image.as_str()]);
+            let options = Some(ListImagesOptions {
+                all: false,
+                filters,
+                digests: false,
+            });
+
+            let out = self
+                .docker
+                .list_images(options)
+                .await
+                .map_err(docker_err!(ImageInfo))?;
+            return Ok(out.len() == 0);
         }
+        Ok(false)
+    }
+
+    fn build_image_from_dockerfile(&self) -> Result<()> {
+        let spinner = Spinner::new("Building Dockerfile");
+
+        let dockerfile_path = self
+            .env
+            .dockerfile
+            .as_ref()
+            .unexpected()?
+            .as_path()
+            .to_string_lossy()
+            .to_string();
+        let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
+        Self::run_docker_command(args)?;
+
+        spinner.finish_and_clear();
 
         Ok(())
     }
 
     pub async fn create_new_environment(&self) -> Result<()> {
+        if self.does_image_need_building().await? {
+            self.build_image_from_dockerfile()?;
+        }
+
         self.delete_container_if_exists().await?;
+
+        let spinner = Spinner::new("Creating Container");
+
         self.create_container()?;
         self.start_container().await?;
-        self.exec_setup_commands()
+        self.exec_setup_commands()?;
+
+        spinner.finish_and_clear();
+        Ok(())
     }
 
     fn to_shell(strings: &[String]) -> Vec<String> {
