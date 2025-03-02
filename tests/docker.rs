@@ -43,7 +43,7 @@ fn mount() -> Result<()> {
             tmp_dir.path().to_str().unwrap(),
             container_mount_dir
         ))?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {container_mount_dir}/{mounted_file_name}"))?
         .expect_string(file_text)?
@@ -69,7 +69,7 @@ fn exec_cmds() -> Result<()> {
             "#,
             APK_ADD_ARGS
         ))?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line("which asciiquarium")?
         .expect_string("/usr/bin/asciiquarium")?
@@ -91,7 +91,7 @@ async fn build() -> Result<()> {
             "#,
             APK_ADD_ARGS
         ))?
-        .args(vec!["--config-path", "[config_path]", "build", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "--build", "[name]"])?
         .stderr("Using config file at \"[config_path]\"\n")?
         .code(0)?;
 
@@ -129,7 +129,7 @@ fn mount_working_dir() -> Result<()> {
             container_mount_dir,
         ))?
         .envs(vec![("PWD", tmp_dir.path().to_str().unwrap())])?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line(&format!("cat {mounted_file_name}"))?
         .expect_string(file_text)?
@@ -155,7 +155,7 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
             entry_options = ["-it"]
             "#,
         ))?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line("echo $0")?
         .expect_string("/bin/ash")?;
@@ -168,7 +168,6 @@ async fn keep_container_running_if_one_terminal_exits() -> Result<()> {
         .args(vec![
             "--config-path",
             harness.config_path(),
-            "up",
             &container_name,
         ])?
         .run(DEFAULT_TIMEOUT)?
@@ -212,7 +211,7 @@ fn dockerfile() -> Result<()> {
             "#,
             dockerfile.path().to_str().unwrap(),
         ))?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         .send_line("which asciiquarium")?
         .expect_string("/usr/bin/asciiquarium")?
@@ -244,7 +243,7 @@ fn badly_formed_dockerfile() -> Result<()> {
             "#,
             dockerfile.path().to_str().unwrap(),
         ))?
-        .args(vec!["--config-path", "[config_path]", "up", "[name]"])?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
         .run(DEFAULT_TIMEOUT)?
         // Can't test full output as we don't know the image name
         .expect_string("Error: cli::container::command::exitcode")?

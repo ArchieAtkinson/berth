@@ -56,7 +56,7 @@ impl TestOutput {
     pub fn stdout(mut self, content: impl Into<String>) -> Result<Self> {
         self.stdout = content.into();
         for (key, value) in &self.base.replacements {
-            self.stdout = self.stderr.replace(key, value);
+            self.stdout = self.stdout.replace(key, value);
         }
 
         Ok(self)
@@ -97,15 +97,16 @@ impl TestOutput {
             .create_command()?
             .output()
             .wrap_err(eyre!("Failed to run {}", self.base.command_string))?;
+
         let output_stdout =
             String::from_utf8(output.stdout).wrap_err("Failed to convert stdout from utf8")?;
         let output_stderr =
             String::from_utf8(output.stderr).wrap_err("Failed to convert stderr from utf8")?;
         let output_exit_code = output.status.code().wrap_err("Failed to get exit code")?;
 
-        assert_eq!(output_stdout, self.stdout);
-        assert_eq!(output_stderr, self.stderr);
-        assert_eq!(output_exit_code, self.exit_code);
+        assert_eq!(output_stdout, self.stdout, "Stdout is different");
+        assert_eq!(output_stderr, self.stderr, "Stderr is different");
+        assert_eq!(output_exit_code, self.exit_code, "Exit code is different");
 
         Ok(())
     }

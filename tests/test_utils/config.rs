@@ -1,5 +1,5 @@
 use berth::{
-    cli::{AppConfig, Commands},
+    cli::{Action, AppConfig},
     configuration::{Configuration, Environment},
 };
 use miette::{GraphicalReportHandler, GraphicalTheme, Result};
@@ -33,15 +33,13 @@ impl ConfigTest {
     pub fn get_env(&self, environment: &str) -> Result<Environment> {
         let app_config = AppConfig {
             config_path: self.file_path.clone(),
-            command: Commands::Up {
-                environment: environment.to_string(),
-            },
+            action: Action::Up,
             cleanup: true,
+            environment: environment.to_string(),
         };
 
         Configuration::new(&app_config)?.find_environment_from_configuration()
     }
-    
 
     pub fn file_path(&self) -> &str {
         self.file_path.to_str().unwrap()

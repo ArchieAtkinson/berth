@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use miette::{Diagnostic, Result};
 use std::{
     ffi::OsString,
@@ -20,7 +20,8 @@ pub enum CliError {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "berth, A CLI to help create development environments without touching repository code"
+    about = "berth, A CLI to help create development environments without touching repository code",
+    trailing_var_arg = false
 )]
 struct Cli {
     /// Path to config file
@@ -31,36 +32,31 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Subcommand, Debug, Clone, PartialEq)]
-pub enum Commands {
-    /// Start an environment (and build it if it doesn't exist)
-    Up {
-        /// The environment from your config file to use
-        environment: String,
-    },
-
-    /// Build/rebuild an environment
-    Build {
-        /// The environment from your config file to use
-        environment: String,
-    },
+    /// Build/rebuild the environment instead of starting it
+    #[arg(long, default_value_t = false, group = "action")]
+    pub build: bool,
 
     /// View environment definition after it has been parsed by berth
-    View {
-        /// The environment to view
-        environment: String,
-    },
+    #[arg(long, default_value_t = false, group = "action")]
+    pub view: bool,
+
+    /// The environment to be used
+    pub environment: String,
+}
+
+#[derive(Clone)]
+pub enum Action {
+    Up,
+    Build,
+    View,
 }
 
 #[derive(Clone)]
 pub struct AppConfig {
     pub config_path: PathBuf,
-    pub command: Commands,
+    pub action: Action,
     pub cleanup: bool,
+    pub environment: String,
 }
 
 impl AppConfig {
@@ -71,13 +67,30 @@ impl AppConfig {
     {
         let cli = match Cli::try_parse_from(args) {
             Ok(v) => v,
-            Err(e) => return Err(CliError::BadInput(e.to_string()).into()),
+            Err(e) => {
+                if e.kind() == clap::error::ErrorKind::DisplayHelp
+                    || e.kind() == clap::error::ErrorKind::DisplayVersion
+                {
+                    println!("{}", e);
+                    std::process::exit(0);
+                } else {
+                    return Err(CliError::BadInput(e.to_string()).into());
+                }
+            }
+        };
+
+        let action = match (cli.view, cli.build) {
+            (true, false) => Action::View,
+            (false, true) => Action::Build,
+            (false, false) => Action::Up,
+            (true, true) => panic!("Parsing should catch this"),
         };
 
         Ok(AppConfig {
             config_path: Self::set_config_path(cli.config_path)?,
-            command: cli.command,
+            action,
             cleanup: cli.cleanup,
+            environment: cli.environment,
         })
     }
 
