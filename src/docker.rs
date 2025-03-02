@@ -1,6 +1,8 @@
 use crate::{configuration::Environment, util::Spinner, UnexpectedExt};
 use bollard::{
-    container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
+    container::{
+        ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    },
     image::ListImagesOptions,
     secret::ContainerSummary,
     Docker,
@@ -217,10 +219,15 @@ impl DockerHandler {
 
     pub async fn delete_container_if_exists(&self) -> Result<()> {
         if self.does_environment_exist().await? {
+            let option = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+
             self.docker
-                .remove_container(&self.env.name, None)
+                .remove_container(&self.env.name, Some(option))
                 .await
-                .map_err(docker_err!(StoppingContainer))?;
+                .map_err(docker_err!(RemovingContainer))?;
         }
         Ok(())
     }
