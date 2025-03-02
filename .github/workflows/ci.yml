@@ -27,5 +27,5 @@ jobs:
       - name: Build
         run: just build
         
-      - test: Test
+      - name: Test
         run: just test
