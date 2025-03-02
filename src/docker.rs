@@ -96,7 +96,7 @@ impl DockerHandler {
                 .await
                 .map_err(docker_err!(ImageInfo))?;
 
-            return Ok(out.len() == 0);
+            return Ok(out.is_empty());
         }
         Ok(false)
     }

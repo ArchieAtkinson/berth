@@ -175,7 +175,6 @@ pub struct Environment {
     pub create_options: Vec<String>,
 }
 
-
 pub struct Configuration {
     content: String,
     app: AppConfig,
@@ -202,7 +201,7 @@ impl Configuration {
     }
 
     fn parse_toml(&mut self) -> Result<TomlConfiguration> {
-        return match toml_edit::de::from_str::<TomlConfiguration>(&self.content) {
+        match toml_edit::de::from_str::<TomlConfiguration>(&self.content) {
             Ok(config) => {
                 self.doc = Some(self.content.parse().unexpected()?);
                 Ok(config)
@@ -220,26 +219,26 @@ impl Configuration {
 
                 Err(labeled_error!(self, TomlParse, span, label_message).into())
             }
-        };
+        }
     }
 
     fn check_presets_exist(&self, config: TomlConfiguration) -> Result<TomlConfiguration> {
         for (env_name, env) in &config.environments {
             for preset_name in &env.presets {
-                if config.presets.get(preset_name).is_none() {
+                if !config.presets.contains_key(preset_name) {
                     let span = self
                         .doc
                         .as_ref()
                         .unexpected()?
                         .get("environment")
                         .and_then(|env| env.as_table())
-                        .and_then(|table| table.get(&env_name))
+                        .and_then(|table| table.get(env_name))
                         .and_then(|item| item.get("presets"))
                         .and_then(|item| item.as_array())
                         .and_then(|array| {
                             array
                                 .iter()
-                                .find(|v| v.as_str() == Some(&preset_name))
+                                .find(|v| v.as_str() == Some(preset_name))
                                 .and_then(|value| value.span())
                         })
                         .unexpected()?;
@@ -287,7 +286,7 @@ impl Configuration {
             };
 
             if is_env_field_preset {
-                let span = find_fields_span("environment", &env_name, field)?;
+                let span = find_fields_span("environment", env_name, field)?;
                 let text = format!("instance {}", spans.len() + 1);
                 let labeled_span = LabeledSpan::new_with_span(Some(text), span);
                 spans.push(labeled_span);
@@ -307,7 +306,7 @@ impl Configuration {
                 };
 
                 if is_preset_field_preset {
-                    let span = find_fields_span("preset", &preset_name, field)?;
+                    let span = find_fields_span("preset", preset_name, field)?;
                     let text = format!("instance {}", spans.len() + 1);
                     let labeled_span = LabeledSpan::new_with_span(Some(text), span);
                     spans.push(labeled_span);
@@ -324,7 +323,7 @@ impl Configuration {
                     .unexpected()?
                     .get("environment")
                     .and_then(|env| env.as_table())
-                    .and_then(|table| table.get(&env_name))
+                    .and_then(|table| table.get(env_name))
                     .and_then(|item| item.get("presets"))
                     .and_then(|item| item.span())
                     .unexpected()?;
@@ -381,15 +380,14 @@ impl Configuration {
 
     fn validate_environments(&self, envs: TomlEnvs) -> Result<TomlEnvs> {
         let get_span = move |env_name: &str| -> Result<Range<usize>> {
-            Ok(self
-                .doc
+            self.doc
                 .as_ref()
                 .unexpected()?
                 .get("environment")
                 .and_then(|env| env.as_table())
-                .and_then(|table| table.get(&env_name))
+                .and_then(|table| table.get(env_name))
                 .and_then(|item| item.span())
-                .unexpected()?)
+                .unexpected()
         };
 
         for (name, env) in &envs {
@@ -397,7 +395,7 @@ impl Configuration {
                 return Err(labeled_error!(
                     self,
                     EnvironmentValidation,
-                    get_span(&name)?,
+                    get_span(name)?,
                     "An environment requires a 'entry_cmd' field"
                 )
                 .into());
@@ -408,7 +406,7 @@ impl Configuration {
                     return Err(labeled_error!(
                         self,
                         EnvironmentValidation,
-                        get_span(&name)?,
+                        get_span(name)?,
                         "An environment requires an 'image' or 'dockerfile' field"
                     )
                     .into())
@@ -417,7 +415,7 @@ impl Configuration {
                     return Err(labeled_error!(
                         self,
                         EnvironmentValidation,
-                        get_span(&name)?,
+                        get_span(name)?,
                         "An environment can only have an 'image' or 'dockerfile' field"
                     )
                     .into())
@@ -491,7 +489,6 @@ impl Configuration {
 
         Ok(env)
     }
-    
 
     fn validate_dockerfile(&self, dockerfile: &str, env_name: &str) -> Result<PathBuf> {
         let mut options = ExpandOptions::new();
@@ -520,7 +517,7 @@ impl Configuration {
                 .unexpected()?
                 .get("environment")
                 .and_then(|env| env.as_table())
-                .and_then(|envs| envs.get(&env_name))
+                .and_then(|envs| envs.get(env_name))
                 .and_then(|env| env.get("dockerfile"))
                 .and_then(|item| item.span())
                 .unexpected()?;
@@ -571,35 +568,34 @@ impl Environment {
         let mut doc = DocumentMut::new();
         let mut table = toml_edit::Table::new();
 
-        
         if !self.image.is_empty() && self.dockerfile.is_none() {
             table.insert("image", value(self.image.clone()));
         }
-        
+
         if let Some(path) = &self.dockerfile {
             table.insert("dockerfile", value(path.display().to_string()));
         }
-        
+
         table.insert("entry_cmd", value(self.entry_cmd.clone()));
-        
+
         if !self.entry_options.is_empty() {
             table.insert(
                 "entry_options",
                 value(Array::from_iter(self.entry_options.iter())),
             );
         }
-        
+
         if !self.exec_cmds.is_empty() {
             table.insert("exec_cmds", value(Array::from_iter(self.exec_cmds.iter())));
         }
-        
+
         if !self.exec_options.is_empty() {
             table.insert(
                 "exec_options",
                 value(Array::from_iter(self.exec_options.iter())),
             );
         }
-        
+
         if !self.create_options.is_empty() {
             table.insert(
                 "create_options",
