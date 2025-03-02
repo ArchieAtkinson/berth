@@ -82,7 +82,7 @@ fn env_name_with_config_in_xdg_config_path() -> Result<()> {
             &file_path,
         )?
         .args(vec!["[name]"])?
-        .envs(vec![("XDG_CONFIG_PATH", tmp_dir.path().to_str().unwrap())])?
+        .envs(vec![("XDG_CONFIG_HOME", tmp_dir.path().to_str().unwrap())])?
         .stderr(format!("Using config file at {:?}\n", file_path))?
         .code(0)?
         .run()?;
@@ -135,7 +135,7 @@ fn env_name_with_no_config_in_env() -> Result<()> {
         .args(vec!["[name]"])?
         .stderr(indoc!(
             r#"
-            Error:   × Could not find config file in $XDG_CONFIG_PATH or $HOME
+            Error:   × Could not find config file in $XDG_CONFIG_HOME or $HOME
             
             "#
         ))?
