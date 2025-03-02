@@ -32,21 +32,20 @@ Requires:
 ```
 berth, A CLI to help create development environments without touching repository code
 
-Usage: berth [OPTIONS] <COMMAND>
+Usage: berth [OPTIONS] <ENVIRONMENT>
 
-Commands:
-  up     Start an environment (and build it if it doesn't exist)
-  build  Build/rebuild an environment
-  view   View environment definition after it has been parsed by berth
-  help   Print this message or the help of the given subcommand(s)
+Arguments:
+  <ENVIRONMENT>  The environment to be used
 
 Options:
-      --config-path <FILE>  Path to config file
-      --cleanup             Deletes container on exit
-  -h, --help                Print help
+     --config-path <FILE>  Path to config file
+     --cleanup             Deletes container on exit
+     --build               Build/rebuild the environment instead of starting it
+     --view                View environment definition after it has been parsed by berth
+ -h, --help                Print help
 ```
 
-To use `berth`, simply create a configuration file with an environment for your application and run `berth up <ENV_NAME>`. Rebuild your environment with `berth build <ENV_NAME>`, this is only required if the image updates, will automatically rebuild if the configuration changes.  
+To use `berth`, simply create a configuration file with an environment for your application and run `berth <ENV_NAME>`. If your environment does not exist yet, `berth` will build it before running it.
 
 ## Configuration
 

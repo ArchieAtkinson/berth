@@ -63,10 +63,10 @@ async fn main() -> Result<()> {
     let docker = DockerHandler::new(environment.clone())?;
 
     let result = {
-        match &app_config.command {
-            cli::Commands::Up { environment: _ } => up(&docker).await,
-            cli::Commands::Build { environment: _ } => build(&docker).await,
-            cli::Commands::View { environment: _ } => {
+        match &app_config.action {
+            cli::Action::Up => up(&docker).await,
+            cli::Action::Build => build(&docker).await,
+            cli::Action::View => {
                 println!("{}", environment.view()?);
                 return Ok(());
             }

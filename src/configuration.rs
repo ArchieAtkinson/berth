@@ -12,10 +12,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::{
-    cli::{AppConfig, Commands},
-    util::UnexpectedExt,
-};
+use crate::{cli::AppConfig, util::UnexpectedExt};
 
 #[derive(Debug, Error, PartialEq, Diagnostic)]
 pub enum ConfigError {
@@ -429,11 +426,7 @@ impl Configuration {
     }
 
     fn create_environment(&self, mut envs: TomlEnvs) -> Result<Environment> {
-        let name = match self.app.command.clone() {
-            Commands::Up { environment: e } => e,
-            Commands::Build { environment: e } => e,
-            Commands::View { environment: e } => e,
-        };
+        let name = self.app.environment.clone();
 
         let mut env = match envs.remove(&name) {
             Some(env) => env,
