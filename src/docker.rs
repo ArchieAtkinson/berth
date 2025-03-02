@@ -1,6 +1,8 @@
 use crate::{configuration::Environment, util::Spinner, UnexpectedExt};
 use bollard::{
-    container::{ListContainersOptions, StartContainerOptions, StopContainerOptions},
+    container::{
+        ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    },
     image::ListImagesOptions,
     secret::ContainerSummary,
     Docker,
@@ -179,8 +181,8 @@ impl DockerHandler {
             return Err(DockerError::EnteringContainer(error_str.to_string()).into());
         }
 
-        if self.is_container_running().await? && !self.is_anyone_connected().await? {
-            self.stop_container().await?;
+        if !self.is_anyone_connected().await? {
+            self.stop_container_if_running().await?;
         }
 
         Ok(())
@@ -217,10 +219,15 @@ impl DockerHandler {
 
     pub async fn delete_container_if_exists(&self) -> Result<()> {
         if self.does_environment_exist().await? {
+            let option = RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            };
+
             self.docker
-                .remove_container(&self.env.name, None)
+                .remove_container(&self.env.name, Some(option))
                 .await
-                .map_err(docker_err!(StoppingContainer))?;
+                .map_err(docker_err!(RemovingContainer))?;
         }
         Ok(())
     }
@@ -261,11 +268,13 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn stop_container(&self) -> Result<()> {
-        self.docker
-            .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
-            .await
-            .map_err(docker_err!(StoppingContainer))?;
+    pub async fn stop_container_if_running(&self) -> Result<()> {
+        if self.is_container_running().await? {
+            self.docker
+                .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
+                .await
+                .map_err(docker_err!(StoppingContainer))?;
+        }
         Ok(())
     }
 

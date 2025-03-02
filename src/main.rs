@@ -27,7 +27,7 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn build(docker: &DockerHandler) -> Result<()> {
     docker.create_new_environment().await?;
-    docker.stop_container().await?;
+    docker.stop_container_if_running().await?;
 
     Ok(())
 }
@@ -74,9 +74,10 @@ async fn main() -> Result<()> {
     };
 
     if let Err(command_error) = result {
-        if let Err(stop_error) = docker.stop_container().await {
+        if let Err(stop_error) = docker.stop_container_if_running().await {
             return Err(command_error.wrap_err(stop_error));
         }
+        return Err(command_error);
     }
 
     if app_config.cleanup {
