@@ -49,7 +49,7 @@ To use `berth`, simply create a configuration file with an environment for your 
 
 ## Configuration
 
-The configuration file uses the `toml` format to describe environments. `berth` will look in `$XDG_CONFIG_PATH` and `$HOME` for `./config/berth/config.toml`. You can also pass in a config file with `--config-path` which will take precedent. 
+The configuration file uses the `toml` format to describe environments. `berth` will look in `$XDG_CONFIG_HOME` and `$HOME` for `./config/berth/config.toml`. You can also pass in a config file with `--config-path` which will take precedent. 
 
 The minimum configuration is shown below:
 ```toml

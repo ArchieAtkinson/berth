@@ -14,7 +14,7 @@ pub enum CliError {
     #[error("Could not find file at 'config-path': {0:?}")]
     NoConfigAtProvidedPath(OsString),
 
-    #[error("Could not find config file in $XDG_CONFIG_PATH or $HOME")]
+    #[error("Could not find config file in $XDG_CONFIG_HOME or $HOME")]
     NoConfigInStandardLocation,
 }
 
@@ -103,7 +103,7 @@ impl AppConfig {
             };
         }
 
-        if let Ok(xdg_config) = std::env::var("XDG_CONFIG_PATH") {
+        if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
             let xdg_path = Path::new(&xdg_config)
                 .join(".config")
                 .join("berth")
