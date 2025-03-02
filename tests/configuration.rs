@@ -186,12 +186,51 @@ fn view_parsed_config() {
         image = "image1"
         entry_cmd = "init2"
         entry_options = ["entry_options1", "entry_options2"]
-        exec_cmds = []
         exec_options = ["exec_options1", "exec_options2"]
         create_options = ["create_options1", "create_options2"]
         "#
         )
     );
+}
+
+#[test]
+fn test_intermediate_view_with_env_vars() {
+    let dockerfile = NamedTempFile::new().expect("Failed to create temporary dockerfile");
+    let dockerfile_path = dockerfile.path().to_str().unwrap();
+
+    let entry_option = TmpEnvVar::new("/test/path");
+    let create_option = TmpEnvVar::new("/custom/docker");
+
+    let config = ConfigTest::new(&formatdoc!(
+        r#"
+        [environment.EnvExpansion]
+        dockerfile = "{}"
+        entry_cmd = "bash"
+        entry_options = ["-v ${{{}}}:/data"]
+        create_options = ["-v ${{{}}}:/mount"]
+        "#,
+        dockerfile_path,
+        entry_option.name(),
+        create_option.name()
+    ));
+
+    let env = config.get_env("EnvExpansion").unwrap();
+    let view_output = env.view().unwrap();
+
+    let expected = formatdoc!(
+        r#"
+        [environment.EnvExpansion]
+        dockerfile = "{}"
+        entry_cmd = "bash"
+        entry_options = ["-v {}:/data"]
+        create_options = ["-v {}:/mount"]
+        "#,
+        dockerfile_path,
+        entry_option.value(),
+        create_option.value()
+    );
+
+    assert_eq!(view_output, expected);
 }
 
 #[test]

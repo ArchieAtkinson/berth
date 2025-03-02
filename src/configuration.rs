@@ -165,6 +165,7 @@ pub struct TomlConfiguration {
 #[derive(Hash, Debug, Clone)]
 pub struct Environment {
     pub name: String,
+    pub original_name: String,
     pub image: String,
     pub dockerfile: Option<PathBuf>,
     pub entry_cmd: String,
@@ -173,6 +174,7 @@ pub struct Environment {
     pub exec_options: Vec<String>,
     pub create_options: Vec<String>,
 }
+
 
 pub struct Configuration {
     content: String,
@@ -473,6 +475,7 @@ impl Configuration {
 
         let mut env = Environment {
             name: name.to_string(),
+            original_name: name.to_string(),
             image,
             dockerfile,
             entry_cmd: env.entry_cmd,
@@ -488,6 +491,7 @@ impl Configuration {
 
         Ok(env)
     }
+    
 
     fn validate_dockerfile(&self, dockerfile: &str, env_name: &str) -> Result<PathBuf> {
         let mut options = ExpandOptions::new();
@@ -561,30 +565,47 @@ impl Configuration {
 }
 
 impl Environment {
-    pub fn view(self) -> Result<String> {
+    pub fn view(&self) -> Result<String> {
         use toml_edit::{value, Array, DocumentMut, Item};
 
         let mut doc = DocumentMut::new();
-
         let mut table = toml_edit::Table::new();
 
-        table.insert("image", value(self.image.clone()));
-        table.insert("entry_cmd", value(self.entry_cmd));
-        table.insert(
-            "entry_options",
-            value(Array::from_iter(self.entry_options.iter())),
-        );
-        table.insert("exec_cmds", value(Array::from_iter(self.exec_cmds.iter())));
-        table.insert(
-            "exec_options",
-            value(Array::from_iter(self.exec_options.iter())),
-        );
-        table.insert(
-            "create_options",
-            value(Array::from_iter(self.create_options.iter())),
-        );
-
-        let unmodified_name = &self.name[6..self.name.len() - 17]; // Fix this to use non magic numbers
+        
+        if !self.image.is_empty() && self.dockerfile.is_none() {
+            table.insert("image", value(self.image.clone()));
+        }
+        
+        if let Some(path) = &self.dockerfile {
+            table.insert("dockerfile", value(path.display().to_string()));
+        }
+        
+        table.insert("entry_cmd", value(self.entry_cmd.clone()));
+        
+        if !self.entry_options.is_empty() {
+            table.insert(
+                "entry_options",
+                value(Array::from_iter(self.entry_options.iter())),
+            );
+        }
+        
+        if !self.exec_cmds.is_empty() {
+            table.insert("exec_cmds", value(Array::from_iter(self.exec_cmds.iter())));
+        }
+        
+        if !self.exec_options.is_empty() {
+            table.insert(
+                "exec_options",
+                value(Array::from_iter(self.exec_options.iter())),
+            );
+        }
+        
+        if !self.create_options.is_empty() {
+            table.insert(
+                "create_options",
+                value(Array::from_iter(self.create_options.iter())),
+            );
+        }
 
         let env_table = doc
             .as_table_mut()
@@ -594,11 +615,7 @@ impl Environment {
             .unexpected()?;
 
         env_table.set_dotted(true);
-        env_table[unmodified_name] = Item::Table(table);
-
-        // todo!(
-        //     "Convert to a Integration Test, change parse order to allow displaying dockerfile etc"
-        // );
+        env_table[&self.original_name] = Item::Table(table);
 
         Ok(doc.to_string())
     }

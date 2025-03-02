@@ -41,6 +41,7 @@ impl ConfigTest {
 
         Configuration::new(&app_config)?.find_environment_from_configuration()
     }
+    
 
     pub fn file_path(&self) -> &str {
         self.file_path.to_str().unwrap()
