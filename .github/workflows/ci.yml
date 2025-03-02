@@ -1,0 +1,31 @@
+name: Cargo Build & Test
+
+on:
+  push:
+
+env: 
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Build and Test Rust
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy
+          
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        
+      - name: Build
+        run: just build
+        
+      - test: Test
+        run: just test
