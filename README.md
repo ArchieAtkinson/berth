@@ -37,6 +37,7 @@ Usage: berth [OPTIONS] <COMMAND>
 Commands:
   up     Start an environment (and build it if it doesn't exist)
   build  Build/rebuild an environment
+  view   View environment definition after it has been parsed by berth
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -171,9 +172,7 @@ The all `*_options` field will expand (local) environment variables. `berth` use
 ## Possible Future Features
 
 - Garbage collection for old containers
-- Allow configuration reuse across environments (named sets of exec commands, mounts, etc)
 - Allow CLI options to be set in the configuration file
-- Pretty outputs (colours, spinners, etc)
 - Expand commands set (forcing rebuilds, deleting containers)
 - If there is only one environment in config don't require a name when running berth
   - Or if a environment is named "default" 

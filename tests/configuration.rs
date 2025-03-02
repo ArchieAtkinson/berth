@@ -156,6 +156,45 @@ fn env_vars_in_options() {
 }
 
 #[test]
+fn view_parsed_config() {
+    let config = ConfigTest::new(
+        r#"
+        [preset.Preset1]
+        image = "image1"
+        entry_options = ["entry_options1"]
+        exec_options = ["exec_options1"]
+        create_options = ["create_options1"]
+
+        [preset.Preset2]
+        entry_cmd = "init2"
+        entry_options = ["entry_options2"]
+        exec_options = ["exec_options2"]
+        create_options = ["create_options2"]
+
+        [environment.Env]
+        presets = ["Preset1", "Preset2"]
+    "#,
+    );
+
+    let env_view = config.get_env("Env").unwrap().view().unwrap();
+
+    assert_eq!(
+        env_view,
+        indoc!(
+            r#"
+        [environment.Env]
+        image = "image1"
+        entry_cmd = "init2"
+        entry_options = ["entry_options1", "entry_options2"]
+        exec_cmds = []
+        exec_options = ["exec_options1", "exec_options2"]
+        create_options = ["create_options1", "create_options2"]
+        "#
+        )
+    );
+}
+
+#[test]
 fn environment_not_in_config() {
     let config = ConfigTest::new(indoc! {r#"
         [environment.Env]

@@ -60,12 +60,16 @@ async fn main() -> Result<()> {
 
     let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
-    let docker = DockerHandler::new(environment)?;
+    let docker = DockerHandler::new(environment.clone())?;
 
     let result = {
         match &app_config.command {
             cli::Commands::Up { environment: _ } => up(&docker).await,
             cli::Commands::Build { environment: _ } => build(&docker).await,
+            cli::Commands::View { environment: _ } => {
+                println!("{}", environment.view()?);
+                return Ok(());
+            }
         }
     };
 

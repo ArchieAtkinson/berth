@@ -162,7 +162,7 @@ pub struct TomlConfiguration {
     pub presets: TomlPresets,
 }
 
-#[derive(Hash, Debug)]
+#[derive(Hash, Debug, Clone)]
 pub struct Environment {
     pub name: String,
     pub image: String,
@@ -191,12 +191,12 @@ impl Configuration {
     }
 
     pub fn find_environment_from_configuration(mut self) -> Result<Environment> {
-        self.parse_toml()
-            .and_then(|config| self.check_presets_exist(config))
-            .and_then(|config| self.valid_unique_fields(config))
-            .and_then(|config| self.merge_presets(config))
-            .and_then(|envs| self.validate_environments(envs))
-            .and_then(|envs| self.create_environment(envs))
+        let config = self.parse_toml()?;
+        let config = self.check_presets_exist(config)?;
+        let config = self.valid_unique_fields(config)?;
+        let envs = self.merge_presets(config)?;
+        let envs = self.validate_environments(envs)?;
+        self.create_environment(envs)
     }
 
     fn parse_toml(&mut self) -> Result<TomlConfiguration> {
@@ -432,6 +432,7 @@ impl Configuration {
         let name = match self.app.command.clone() {
             Commands::Up { environment: e } => e,
             Commands::Build { environment: e } => e,
+            Commands::View { environment: e } => e,
         };
 
         let mut env = match envs.remove(&name) {
@@ -556,5 +557,49 @@ impl Configuration {
             name.to_lowercase(),
             hasher.finalize()
         ))
+    }
+}
+
+impl Environment {
+    pub fn view(self) -> Result<String> {
+        use toml_edit::{value, Array, DocumentMut, Item};
+
+        let mut doc = DocumentMut::new();
+
+        let mut table = toml_edit::Table::new();
+
+        table.insert("image", value(self.image.clone()));
+        table.insert("entry_cmd", value(self.entry_cmd));
+        table.insert(
+            "entry_options",
+            value(Array::from_iter(self.entry_options.iter())),
+        );
+        table.insert("exec_cmds", value(Array::from_iter(self.exec_cmds.iter())));
+        table.insert(
+            "exec_options",
+            value(Array::from_iter(self.exec_options.iter())),
+        );
+        table.insert(
+            "create_options",
+            value(Array::from_iter(self.create_options.iter())),
+        );
+
+        let unmodified_name = &self.name[6..self.name.len() - 17]; // Fix this to use non magic numbers
+
+        let env_table = doc
+            .as_table_mut()
+            .entry("environment")
+            .or_insert(Item::Table(toml_edit::Table::new()))
+            .as_table_mut()
+            .unexpected()?;
+
+        env_table.set_dotted(true);
+        env_table[unmodified_name] = Item::Table(table);
+
+        // todo!(
+        //     "Convert to a Integration Test, change parse order to allow displaying dockerfile etc"
+        // );
+
+        Ok(doc.to_string())
     }
 }

@@ -95,6 +95,7 @@ impl DockerHandler {
                 .list_images(options)
                 .await
                 .map_err(docker_err!(ImageInfo))?;
+
             return Ok(out.len() == 0);
         }
         Ok(false)

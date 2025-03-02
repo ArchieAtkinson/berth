@@ -48,6 +48,12 @@ pub enum Commands {
         /// The environment from your config file to use
         environment: String,
     },
+
+    /// View environment definition after it has been parsed by berth
+    View {
+        /// The environment to view
+        environment: String,
+    },
 }
 
 #[derive(Clone)]
