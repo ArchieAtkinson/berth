@@ -179,8 +179,8 @@ impl DockerHandler {
             return Err(DockerError::EnteringContainer(error_str.to_string()).into());
         }
 
-        if self.is_container_running().await? && !self.is_anyone_connected().await? {
-            self.stop_container().await?;
+        if !self.is_anyone_connected().await? {
+            self.stop_container_if_running().await?;
         }
 
         Ok(())
@@ -261,11 +261,13 @@ impl DockerHandler {
         Ok(())
     }
 
-    pub async fn stop_container(&self) -> Result<()> {
-        self.docker
-            .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
-            .await
-            .map_err(docker_err!(StoppingContainer))?;
+    pub async fn stop_container_if_running(&self) -> Result<()> {
+        if self.is_container_running().await? {
+            self.docker
+                .stop_container(&self.env.name, Some(StopContainerOptions { t: 0 }))
+                .await
+                .map_err(docker_err!(StoppingContainer))?;
+        }
         Ok(())
     }
 
