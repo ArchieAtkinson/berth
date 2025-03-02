@@ -1,6 +1,6 @@
 use berth::cli;
 use berth::util::Spinner;
-use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
+use berth::{cli::AppConfig, configuration::Configuration, docker::A};
 use log::info;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
@@ -25,14 +25,14 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn build(docker: &DockerHandler) -> Result<()> {
+async fn build(docker: &A) -> Result<()> {
     docker.create_new_environment().await?;
     docker.stop_container().await?;
 
     Ok(())
 }
 
-async fn up(docker: &DockerHandler) -> Result<()> {
+async fn up(docker: &A) -> Result<()> {
     if !docker.does_environment_exist().await? {
         docker.create_new_environment().await?;
     } else {
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 
     let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
-    let docker = DockerHandler::new(environment.clone())?;
+    let docker = A::new(environment.clone())?;
 
     let result = {
         match &app_config.command {

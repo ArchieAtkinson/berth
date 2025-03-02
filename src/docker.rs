@@ -64,17 +64,17 @@ macro_rules! docker_err {
 const CONTAINER_ENGINE: &str = "docker";
 
 #[derive(Debug)]
-pub struct DockerHandler {
+pub struct A {
     env: Environment,
     docker: Docker,
 }
 
-impl DockerHandler {
+impl A {
     pub fn new(environment: Environment) -> Result<Self> {
         let docker =
             Docker::connect_with_local_defaults().map_err(docker_err!(ConnectingToDaemon))?;
 
-        Ok(DockerHandler {
+        Ok(A {
             env: environment,
             docker,
         })
