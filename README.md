@@ -1,24 +1,21 @@
- # berth
+# berth
 
-berth is a Blazingly Fast™ CLI-focused alternative to VSCode DevContainers, letting you create development environments without touching repository code - written in Rust
+berth is a Blazingly Fast™ CLI-focused alternative to the VSCode Dev Container Extension, letting you create development environments without touching repository code - written in Rust.
 
 ## What is `berth`
-`berth` brings VSCode DevContainer's convenience to CLI editors like Helix by letting you create and enter interactive containers using a global config file. It makes it easy to mount projects into containers and add development tools, without needing to modify the source repository or have a Dockerfile available
+`berth` brings VSCode Dev Container's convenience to CLI editors like Helix by letting you create and enter interactive containers using a global config file. It makes it easy to mount projects into containers and add development tools, without needing to modify the source repository or have a Dockerfile available
 
-Requires:
-- Rust 
-- Docker
-- Docker CLI
-
-`berth` is very must a work in progress and promises no backwards compatibility at this state. 
+`berth` is a work in progress and promises no backwards compatibility at this state. Currently supports Linux and has been tested on WSL2 with Docker Desktop.
 
 ## Table of Content
 
+- [Installation](#installation)
 - [Usage](#usage)
 - [Configuration](#configuration)
   - [Presets](#presets)
     - [Merging](#merging)
   - [Mounts Environment Variable Expansion Side Effects](#mounts-environment-variable-expansion-side-effects)
+- [Motivations](#motivations)
 - [Possible Future Features](#possible-future-features)
 - [Information for Nerds](#information-for-nerds)
   - [Container Naming](#container-naming)
@@ -26,6 +23,18 @@ Requires:
   - [Application Dependencies](#application-dependencies)
   - [Development Dependencies](#development-dependencies)
 
+## Installation
+
+Requires:
+- Rust and Cargo (Tested on v1.84.0)
+- Docker and the Docker CLI
+
+Installation Steps:
+1. Clone the repo with `git clone git@github.com:ArchieAtkinson/berth.git`
+2. Enter the repo directory with `cd berth`
+3. Build and install with `cargo install --path .`
+
+You can now access `berth` from your command line. 
 
 ## Usage
 
@@ -45,35 +54,48 @@ Options:
  -h, --help                Print help
 ```
 
-To use `berth`, simply create a configuration file with an environment for your application and run `berth <ENV_NAME>`. If your environment does not exist yet, `berth` will build it before running it.
+To use `berth`, simply create a configuration file with an environment for your application and run `berth <ENV_NAME>`. If this is the first time using this environment, `berth` will build it before running it.
+
+You can test a minimum example with:    
+`berth --cleanup --config-path config_examples/basic.toml basic`    
+
+Once in the container you can run `asciiquarium` to see a lovey ocean scene. 
+
+Check the `config_examples` directory for example configuration files.
 
 ## Configuration
 
-The configuration file uses the `toml` format to describe environments. `berth` will look in `$XDG_CONFIG_HOME` and `$HOME` for `./config/berth/config.toml`. You can also pass in a config file with `--config-path` which will take precedent. 
+The configuration file is written in `TOML` and is used to define your environments.
 
-The minimum configuration is shown below:
+By default `berth` will look for the configuration file at:
+- `$XDG_CONFIG_HOME/.config/berth/config.toml`
+- `$HOME/.config/berth/config.toml` 
+
+ You can also pass in a configuration file with `--config-path` which will take precedent over the above.
+
+Each environment is defined in a `environment` sub-table, with the name used to the reference the environment the name of the sub-table. In the above example that is "MyProjectDev".
+
+| Option | Type | Description | Example |
+|:-:|:-:|:-:|:-:|
+| `image` | String | The container image to use. Passed to `docker create`. This or the `dockerfile` field must be present. | `image = "alpine:edge"` |
+| `dockerfile` | String | The path to a dockerfile, this will be build and passed to `docker create`. This or the `image` field must be present. | `dockerfile = "$HOME/dockerfile"` |
+| `entry_cmd` | String|  The command that will be run in the container when the environment is started. Passed to `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
+| `entry_options` | String Array | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
+| `exec_cmds`| String Array | A list of additional commands that will be run in the container when it is created, useful for adding additional packages. Passed to `docker exec` | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
+| `exec_options` | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
+| `create_options` | String Array | Docker CLI options passed to `docker create` command. Note that `--name` is not allowed as that is provided by `berth`| `create_options = ["--privileged"]`|
+| `presets` | String Array | The name(s) of preset(s) to merge into the environment, see below for more information | `presets = ["interactive", "working_dir_mount"]` |  
+
+The minimum configuration is:
 ```toml
 [environment.MyProjectDev]
 image = "alpine:edge"
 entry_cmd = "/bin/ash"
 ```
 
-Each environment is defined in a `environment` sub-table, with the name used to the reference the environment the name of the sub-table. In the above example that is "MyProjectDev".
-
-| Option | Type | Description | Example |
-|:-:|:-:|:-:|:-:|
-| `image` | String | The container image to use. Used with `docker create`. This or the `dockerfile` field is required. | `image = "alpine:edge"` |
-| `dockerfile` | String | The path to a dockerfile, this will be build and used with `docker create`. This or the `image` field is required. | `dockerfile = "$HOME/dockerfile"` |
-| `entry_cmd` | String|  The command that will be run in the container whenever it is started. Used with `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
-| `entry_options` | String Array | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
-| `exec_cmds`| String Array | A set of additional commands that will be run in the container when it is created, useful for add additional packages and other setup. | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
-| `exec_options` | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
-| `create_options` | String Array | Docker CLI options passed to `docker create` command.`--name` is not allowed as that is controlled by `berth`| `create_options = ["--privileged"]`|
-| `presets` | String Array | The name of preset(s) to merge into the environment, see below for more information | `presets = ["interactive", "working_dir_mount"]` |  
-
 ### Presets
 
-Presets provides the ability to define reusable environment fragments that can be merged into different environments. They take the same fields as an `environment` (apart from the `presets` field) and do not have any required fields. Required fields in `environment`s are checked post merge.
+Presets enable you to define reusable environment fragments that can be merged into different environments. They take the same fields as an `environment` (apart from the `presets` field) and do not have any required fields. 
 
 Below is an example of a `preset` and how they are used in an `environment`:
 ```toml
@@ -89,14 +111,14 @@ presets = ["interactive"]
 
 This gives you an interactive `alpine` container. Try this config with:
 ```bash
-berth --cleanup --config-path config_examples/simple_preset.toml up example
+berth --cleanup --config-path config_examples/simple_preset.toml example
 ```
 
 An `environment` does not need to populate any of the required fields if they are provided by a `preset`.  
 
 #### Merging
 
-Single value fields, like `image`, are can only be present once across the orignal `environment` and all specified `presets`. Tields that take an array are merged non-destructively and are flattened into a single array. An some example of these behaviours are below.
+Single value fields, like `image`, are can only be present once across the original `environment` and all specified `presets`. Fields that take an array are merged non-destructively and are flattened into a single array. Some examples of these behaviors are below.
 
 This example: 
 ```toml
@@ -163,20 +185,23 @@ Error: configuration::preset::duplication
 ```
 
 
-### Mounts Environment Variable Expansion Side Effects
+### Environment Variable Expansion Side Effects
 
-The all `*_options` field will expand (local) environment variables. `berth` uses a hash of the entire environment configuration, post expansion to create a unique identified to detect changes and find already active container. This can be useful to having one environment used for many different containers. The primary use case of this is mounting working directory with `PWD` as it will create a new container for each unique working directory `berth` is ran in.
+The all `*_options` field will expand (local) environment variables. `berth` uses a hash of the entire environment configuration which is generated post expansion to create a unique identified to detect changes and find already created containers. This can be useful to having one environment used for many different containers. The primary use case of this is mounting working directory with `PWD` as it will create a new container for each unique working directory `berth` is ran in.
 
+## Motivations
+
+There were two mains motivations for me to make this tool. 
+
+First was to move away from VSCode to use the CLI text editor Helix. However, a lot of my projects use containers to handle the dependencies and required tools. This has lead to relience on VSCode and its Dev Containers extension to be able to work on these projects. Not wanting to modify these containers to add my own personal tools I created `berth` to fill that niche while staying within the dev container workflow. I'm currently using every day for my work and found that is works better than I hoped.  
+
+Second is wanting to learn Rust and this gave me a perfect excuse. 
 
 ## Possible Future Features
 
 - Garbage collection for old containers
 - Allow CLI options to be set in the configuration file
 - Expand commands set (forcing rebuilds, deleting containers)
-- If there is only one environment in config don't require a name when running berth
-  - Or if a environment is named "default" 
-- Don't require the `up` command, just default to it
-- Provide a command to view a full expanded environment (post preset merge, env var expansion etc)
 
 ## Information for Nerds
 
@@ -185,7 +210,7 @@ The all `*_options` field will expand (local) environment variables. `berth` use
 Containers names are split into three, separated by a `-`:     
 `berth-Bar-a667d944e9480d0d`
 
-The first part is simple, just `berth` to identify it as created by `berth`.
+The first part is simple, just `berth` to identify it was created by `berth`.
 
 The second part, which is `Bar` in this example, is the name of the environment.
 
@@ -193,12 +218,12 @@ The third part is a hash of the environment configurations using `SipHash-1-3`, 
 
 ### Image Naming
 
-If using a dockerfile to provide the image, `berth` will build it and name it in a similar format as the container:     
+If a dockerfile is used to provide the image, `berth` will build it and name it in a similar format as the container:     
 `berth-test-71a2f882f9065141cbf75a92b2ef7217eb1ec4bb0f85a5cec919c6812e13b814`
 
 With the images tag always `latest`.
 
-A difference from the container naming convention is that the third part is a `sha256` hash of the entire dockerfile. This provides the same benefits as hashing the environment configuration, allowing `berth` to detect changes and rebuild if necessary. This image name is also added to the environment configuration so will be represented in the container hash. 
+A difference from the container naming convention is that the third part is a `sha256` hash of the entire dockerfile. This provides the same benefits as hashing the environment configuration, allowing `berth` to detect changes and rebuild if necessary. The image name is also added to the environment configuration, so will be also be represented in the container hash. 
 
 ### Application Dependencies
 
@@ -211,20 +236,22 @@ A difference from the container naming convention is that the third part is a `s
 - `envmnt`
   - Expanding environment variables in the configuration file
 - `shell-words`
-  - Splits command line type commands in the configuration file to be passed tocommands  
+  - Splits command line type commands in the configuration file to be passed to commands  
 - `thiserror` and `miette`
   - Provides pretty, well defined errors
 - `bollard` (requires `tokio` and `tokio-utils`)
   - Programmaic way to interact with docker
 - `indicatif`
   - Progress spinners
+- `sha2`
+  - Hashing the dockerfile content
     
 ### Development Dependencies
 
 - `assert_cmd`
   - Provides the binary path of `berth` for integration testings
 - `ctor`
-  - Installs `color-eyre` hook for the test binary
+  - Installs the `color-eyre` hook for the test binary
 - `tempfile`
   - Provide ephemerla directories and files for integration testing `berth`'s file based features 
 - `pretty_assertions`
