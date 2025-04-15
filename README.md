@@ -266,3 +266,9 @@ A difference from the container naming convention is that the third part is a `s
   - For generating random container names
 - `serial_test`
   - Allows forcing interactive tests to run in serial to prevent overloading docker
+
+### TODO
+
+- Add snapshot testing
+- Add docker mocking
+- Add check if docker is up in test ctor 
