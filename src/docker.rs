@@ -3,7 +3,6 @@ use bollard::{
     container::{
         ListContainersOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
     },
-    image::ListImagesOptions,
     secret::ContainerSummary,
     Docker,
 };
@@ -82,25 +81,8 @@ impl DockerHandler {
         })
     }
 
-    async fn does_image_need_building(&self) -> Result<bool> {
-        if self.env.dockerfile.is_some() {
-            let mut filters = HashMap::new();
-            filters.insert("reference", vec![self.env.image.as_str()]);
-            let options = Some(ListImagesOptions {
-                all: false,
-                filters,
-                digests: false,
-            });
-
-            let out = self
-                .docker
-                .list_images(options)
-                .await
-                .map_err(docker_err!(ImageInfo))?;
-
-            return Ok(out.is_empty());
-        }
-        Ok(false)
+    fn does_image_need_building(&self) -> bool {
+        self.env.dockerfile.is_some()
     }
 
     fn build_image_from_dockerfile(&self) -> Result<()> {
@@ -123,7 +105,7 @@ impl DockerHandler {
     }
 
     pub async fn create_new_environment(&self) -> Result<()> {
-        if self.does_image_need_building().await? {
+        if self.does_image_need_building() {
             self.build_image_from_dockerfile()?;
         }
 
