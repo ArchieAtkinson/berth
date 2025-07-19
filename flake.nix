@@ -26,6 +26,7 @@
               rustToolchain
               pkg-config
               openssl
+              bacon
               ];
           };
         }

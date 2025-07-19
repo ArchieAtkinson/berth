@@ -57,6 +57,38 @@ fn mount() -> Result<()> {
 
 #[test]
 #[serial]
+fn copy_cmds() -> Result<()> {
+    let mut tmp_file = NamedTempFile::new().unwrap();
+    let tmp_file_path = tmp_file.path().to_str().unwrap().to_string();
+    let file_text = "Hello World";
+    writeln!(tmp_file, "{}", file_text).unwrap();
+
+    TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            image = "alpine:edge"
+            entry_cmd = "/bin/ash"
+            cp_cmds = ["{} CONTAINER:{}"]
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+            tmp_file_path,
+            tmp_file_path
+        ))?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
+        .run(DEFAULT_TIMEOUT)?
+        .send_line(&format!("cat {}", tmp_file_path))?
+        .expect_string(file_text)?
+        .send_line("exit")?
+        .expect_terminate()?
+        .success()?;
+
+    tmp_file.close().unwrap();
+    Ok(())
+}
+
+#[test]
+#[serial]
 fn exec_cmds() -> Result<()> {
     TestHarness::new()
         .config(&formatdoc!(

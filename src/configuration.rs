@@ -109,6 +109,9 @@ pub struct TomlEnvironment {
     entry_options: Vec<String>,
 
     #[serde(default)]
+    cp_cmds: Vec<String>,
+
+    #[serde(default)]
     exec_cmds: Vec<String>,
 
     #[serde(default)]
@@ -136,6 +139,9 @@ pub struct TomlPreset {
 
     #[serde(default)]
     entry_options: Vec<String>,
+
+    #[serde(default)]
+    cp_cmds: Vec<String>,
 
     #[serde(default)]
     exec_cmds: Vec<String>,
@@ -170,6 +176,7 @@ pub struct Environment {
     pub exec_cmds: Vec<String>,
     pub exec_options: Vec<String>,
     pub create_options: Vec<String>,
+    pub cp_cmds: Vec<String>,
 }
 
 pub struct Configuration {
@@ -359,16 +366,20 @@ impl Configuration {
                 if !preset.entry_cmd.is_empty() {
                     env.entry_cmd = preset.entry_cmd.clone();
                 }
+
                 if !preset.provided_image.is_empty() {
                     env.provided_image = preset.provided_image.clone();
                 }
+
                 if !preset.dockerfile.is_empty() {
                     env.dockerfile = preset.dockerfile.clone();
                 }
+
                 env.entry_options.extend_from_slice(&preset.entry_options);
                 env.exec_cmds.extend_from_slice(&preset.exec_cmds);
                 env.exec_options.extend_from_slice(&preset.exec_options);
                 env.create_options.extend_from_slice(&preset.create_options);
+                env.cp_cmds.extend_from_slice(&preset.cp_cmds);
             }
         }
 
@@ -474,6 +485,7 @@ impl Configuration {
             exec_cmds: env.exec_cmds,
             exec_options: env.exec_options,
             create_options: env.create_options,
+            cp_cmds: env.cp_cmds,
         };
 
         let mut hasher = DefaultHasher::new();

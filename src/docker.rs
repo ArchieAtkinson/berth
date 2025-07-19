@@ -133,6 +133,7 @@ impl DockerHandler {
 
         self.create_container()?;
         self.start_container().await?;
+        self.copy_commands()?;
         self.exec_setup_commands()?;
 
         spinner.finish_and_clear();
@@ -261,6 +262,20 @@ impl DockerHandler {
             args.push(&self.env.name);
 
             let split_cmd = shell_words::split(cmd).unwrap();
+            args.extend(split_cmd.iter().map(|s| s.as_str()));
+
+            Self::run_docker_command(args)?;
+        }
+        Ok(())
+    }
+
+    fn copy_commands(&self) -> Result<()> {
+        for cmd in &self.env.cp_cmds {
+            let mut args = vec!["cp"];
+
+            let fixed_string = cmd.clone().replace("CONTAINER", &self.env.name);
+
+            let split_cmd = shell_words::split(&fixed_string).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
 
             Self::run_docker_command(args)?;
