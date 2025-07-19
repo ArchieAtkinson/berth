@@ -81,6 +81,7 @@ Each environment is defined in a `environment` sub-table, with the name used to 
 | `dockerfile` | String | The path to a dockerfile, this will be build and passed to `docker create`. This or the `image` field must be present. | `dockerfile = "$HOME/dockerfile"` |
 | `entry_cmd` | String|  The command that will be run in the container when the environment is started. Passed to `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
 | `entry_options` | String Array | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
+| `cp_cmds`| String Array | A list of commands to copy files to or from the container. Use `CONTAINER`as a placeholder for the container name. Passed directly to `docker cp` | `cp_cmds = [" -L /home/my_script.sh CONTAINER:/home/init_script.sh"]`|
 | `exec_cmds`| String Array | A list of additional commands that will be run in the container when it is created, useful for adding additional packages. Passed to `docker exec` | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
 | `exec_options` | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
 | `create_options` | String Array | Docker CLI options passed to `docker create` command. Note that `--name` is not allowed as that is provided by `berth`| `create_options = ["--privileged"]`|
@@ -272,3 +273,9 @@ A difference from the container naming convention is that the third part is a `s
 - Add snapshot testing
 - Add docker mocking
 - Add check if docker is up in test ctor 
+- Fix cleanup not always working
+- Fix docker containers not removing them selves if build fails
+- Improves errors when build fails due to docker exec
+- Add dependciy system for files outside of berth file for update tracking
+- Add docker cp support
+- Add build context around dockerfile inputs to allow COPY to work

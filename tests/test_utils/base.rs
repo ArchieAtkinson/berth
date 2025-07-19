@@ -111,6 +111,11 @@ impl TestBase {
         if let Some(dir) = &self.working_dir {
             command.current_dir(dir);
         }
+
+        if let Ok(docker_host) = std::env::var("DOCKER_HOST") {
+            self.envs.push(("DOCKER_HOST".into(), docker_host));
+        }
+
         command.env_clear();
         command.args(self.args.clone());
         command.envs(self.envs.clone());
