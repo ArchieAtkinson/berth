@@ -89,6 +89,50 @@ fn copy_cmds() -> Result<()> {
 
 #[test]
 #[serial]
+fn relative_to_config_file() -> Result<()> {
+    let mut copy_file = NamedTempFile::new().unwrap();
+    let file_text = "Hello World";
+    writeln!(copy_file, "{}", file_text).unwrap();
+    let copy_file_path = copy_file.path();
+
+    let config_file = NamedTempFile::new().unwrap();
+    let config_file_path = config_file.path();
+
+    let harness = TestHarness::new().config_with_path(
+        &formatdoc!(
+            r#"
+            image = "alpine:edge"
+            entry_cmd = "/bin/ash"
+            cp_cmds = ["{} CONTAINER:{}"]
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+            copy_file_path.file_name().unwrap().to_str().unwrap(),
+            copy_file_path.to_str().unwrap()
+        ),
+        &config_file_path,
+    )?;
+
+    harness
+        .args(vec![
+            "--config-path",
+            config_file_path.to_str().unwrap(),
+            "[name]",
+        ])?
+        .run(DEFAULT_TIMEOUT)?
+        .send_line(&format!("cat {}", copy_file_path.to_str().unwrap()))?
+        .expect_string(file_text)?
+        .send_line("exit")?
+        .expect_terminate()?
+        .success()?;
+
+    copy_file.close().unwrap();
+    config_file.close().unwrap();
+    Ok(())
+}
+
+#[test]
+#[serial]
 fn exec_cmds() -> Result<()> {
     TestHarness::new()
         .config(&formatdoc!(

@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 
     let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
-    let docker = DockerHandler::new(environment.clone())?;
+    let docker = DockerHandler::new(environment.clone(), &app_config.config_path)?;
 
     let result = {
         match &app_config.action {

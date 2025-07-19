@@ -85,7 +85,9 @@ Each environment is defined in a `environment` sub-table, with the name used to 
 | `exec_cmds`| String Array | A list of additional commands that will be run in the container when it is created, useful for adding additional packages. Passed to `docker exec` | `exec_cmds = ["apt update -y", "apt install -y cowsay"]`|
 | `exec_options` | String Array |  Docker CLI options passed to the `docker exec` for all `exec_cmds` | `exec_options = ["-u", "user"]`|
 | `create_options` | String Array | Docker CLI options passed to `docker create` command. Note that `--name` is not allowed as that is provided by `berth`| `create_options = ["--privileged"]`|
-| `presets` | String Array | The name(s) of preset(s) to merge into the environment, see below for more information | `presets = ["interactive", "working_dir_mount"]` |  
+| `presets` | String Array | The name(s) of preset(s) to merge into the environment, see below for more information | `presets = ["interactive", "working_dir_mount"]` |
+
+Note all commands are run with the current working directory as the provided configuration file's directory.
 
 The minimum configuration is:
 ```toml
