@@ -11,6 +11,7 @@ use log::info;
 use miette::{Diagnostic, Result};
 use std::{
     collections::HashMap,
+    path::{Path, PathBuf},
     process::{Command, Output},
 };
 
@@ -69,16 +70,21 @@ const CONTAINER_ENGINE: &str = "docker";
 pub struct DockerHandler {
     env: Environment,
     docker: Docker,
+    config_dir: PathBuf,
 }
 
 impl DockerHandler {
-    pub fn new(environment: Environment) -> Result<Self> {
+    pub fn new(environment: Environment, config_path: &Path) -> Result<Self> {
         let docker =
             Docker::connect_with_local_defaults().map_err(docker_err!(ConnectingToDaemon))?;
+
+        let mut config_dir = config_path.to_path_buf();
+        config_dir.pop();
 
         Ok(DockerHandler {
             env: environment,
             docker,
+            config_dir,
         })
     }
 
@@ -115,7 +121,7 @@ impl DockerHandler {
             .to_string_lossy()
             .to_string();
         let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
-        Self::run_docker_command(args)?;
+        self.run_docker_command(args)?;
 
         spinner.finish_and_clear();
 
@@ -249,7 +255,7 @@ impl DockerHandler {
 
         args.push(&self.env.image);
         args.extend_from_slice(&["tail", "-f", "/dev/null"]);
-        Self::run_docker_command(args)
+        self.run_docker_command(args)
     }
 
     fn exec_setup_commands(&self) -> Result<()> {
@@ -264,7 +270,7 @@ impl DockerHandler {
             let split_cmd = shell_words::split(cmd).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
 
-            Self::run_docker_command(args)?;
+            self.run_docker_command(args)?;
         }
         Ok(())
     }
@@ -278,7 +284,7 @@ impl DockerHandler {
             let split_cmd = shell_words::split(&fixed_string).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
 
-            Self::run_docker_command(args)?;
+            self.run_docker_command(args)?;
         }
         Ok(())
     }
@@ -295,19 +301,20 @@ impl DockerHandler {
 
     pub async fn is_anyone_connected(&self) -> Result<bool> {
         let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
-        let output = Self::run_docker_command_with_output(args)?;
+        let output = self.run_docker_command_with_output(args)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
 
         let no_connections_ps_count = 2;
         Ok(ps_count > no_connections_ps_count)
     }
 
-    fn run_docker_command_with_output(args: Vec<&str>) -> Result<Output> {
+    fn run_docker_command_with_output(&self, args: Vec<&str>) -> Result<Output> {
         let command = format!("{} {}", CONTAINER_ENGINE, shell_words::join(&args));
         info!("{command}");
 
         let output = Command::new(CONTAINER_ENGINE)
             .args(&args)
+            .current_dir(&self.config_dir)
             .output()
             .map_err(|_| DockerError::CommandFailed(command.clone()))?;
 
@@ -323,7 +330,7 @@ impl DockerHandler {
         }
     }
 
-    fn run_docker_command(args: Vec<&str>) -> Result<()> {
-        Self::run_docker_command_with_output(args).map(|_| ())
+    fn run_docker_command(&self, args: Vec<&str>) -> Result<()> {
+        self.run_docker_command_with_output(args).map(|_| ())
     }
 }
