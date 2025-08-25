@@ -106,6 +106,9 @@ pub struct TomlEnvironment {
     dockerfile: String,
 
     #[serde(default)]
+    build_context: String,
+
+    #[serde(default)]
     entry_options: Vec<String>,
 
     #[serde(default)]
@@ -136,6 +139,9 @@ pub struct TomlPreset {
 
     #[serde(default)]
     dockerfile: String,
+
+    #[serde(default)]
+    build_context: String,
 
     #[serde(default)]
     entry_options: Vec<String>,
@@ -171,6 +177,7 @@ pub struct Environment {
     pub original_name: String,
     pub image: String,
     pub dockerfile: Option<PathBuf>,
+    pub build_context: Option<PathBuf>,
     pub entry_cmd: String,
     pub entry_options: Vec<String>,
     pub exec_cmds: Vec<String>,
@@ -286,6 +293,7 @@ impl Configuration {
                 "entry_cmd" => !env.entry_cmd.is_empty(),
                 "image" => !env.provided_image.is_empty(),
                 "dockerfile" => !env.dockerfile.is_empty(),
+                "build_context" => !env.build_context.is_empty(),
                 _ => unreachable!("Unknown field {field}"),
             };
 
@@ -306,6 +314,7 @@ impl Configuration {
                     "entry_cmd" => !config.presets[preset_name].entry_cmd.is_empty(),
                     "image" => !config.presets[preset_name].provided_image.is_empty(),
                     "dockerfile" => !config.presets[preset_name].dockerfile.is_empty(),
+                    "build_context" => !config.presets[preset_name].build_context.is_empty(),
                     _ => unreachable!("Unknown field {field}"),
                 };
 
@@ -350,10 +359,11 @@ impl Configuration {
             Ok(())
         };
 
+        let unique_fields = ["entry_cmd", "image", "dockerfile", "build_context"];
         for (env_name, env) in &config.environments {
-            check_unique("entry_cmd", env, env_name)?;
-            check_unique("image", env, env_name)?;
-            check_unique("dockerfile", env, env_name)?;
+            for field in unique_fields {
+                check_unique(field, env, env_name)?;
+            }
         }
         Ok(config)
     }
@@ -431,6 +441,16 @@ impl Configuration {
 
                 _ => (),
             }
+
+            if !env.build_context.is_empty() && env.dockerfile.is_empty() {
+                return Err(labeled_error!(
+                    self,
+                    EnvironmentValidation,
+                    get_span(name)?,
+                    "'build_context' can only be used with a 'dockerfile'"
+                )
+                .into());
+            }
         }
 
         Ok(envs)
@@ -466,13 +486,14 @@ impl Configuration {
                 .for_each(|s| *s = envmnt::expand(s, Some(options)))
         });
 
-        let (image, dockerfile) = match env.provided_image.as_str() {
+        let (image, dockerfile, build_context) = match env.provided_image.as_str() {
             "" => {
                 let dockerfile_path = self.validate_dockerfile(&env.dockerfile, &name)?;
+                let build_context = self.validate_build_context(&env.build_context, &name)?;
                 let image_name = Self::generate_image_name(&name, &dockerfile_path)?;
-                (image_name, Some(dockerfile_path))
+                (image_name, Some(dockerfile_path), build_context)
             }
-            _ => (env.provided_image, None),
+            _ => (env.provided_image, None, None),
         };
 
         let mut env = Environment {
@@ -480,6 +501,7 @@ impl Configuration {
             original_name: name.to_string(),
             image,
             dockerfile,
+            build_context,
             entry_cmd: env.entry_cmd,
             entry_options: env.entry_options,
             exec_cmds: env.exec_cmds,
@@ -537,6 +559,58 @@ impl Configuration {
         }
 
         Ok(resolved)
+    }
+
+    fn validate_build_context(
+        &self,
+        build_context_dir: &str,
+        env_name: &str,
+    ) -> Result<Option<PathBuf>> {
+        if build_context_dir.is_empty() {
+            return Ok(None);
+        }
+
+        let mut options = ExpandOptions::new();
+        options.expansion_type = Some(ExpansionType::Unix);
+
+        let dockerfile = envmnt::expand(build_context_dir, Some(options));
+
+        let path = Path::new(&dockerfile);
+
+        let resolved = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.app
+                .config_path
+                .parent()
+                .ok_or_else(|| {
+                    ConfigError::FailedToInteractWithDockerfile(path.display().to_string())
+                })?
+                .join(path)
+        };
+
+        if !resolved.exists() || !resolved.is_dir() {
+            let span = self
+                .doc
+                .as_ref()
+                .unexpected()?
+                .get("environment")
+                .and_then(|env| env.as_table())
+                .and_then(|envs| envs.get(env_name))
+                .and_then(|env| env.get("build_context"))
+                .and_then(|item| item.span())
+                .unexpected()?;
+
+            return Err(labeled_error!(
+                self,
+                InvalidDockerfilePath,
+                span,
+                "Could not find build context / Build context must be a directory"
+            )
+            .into());
+        }
+
+        Ok(Some(resolved))
     }
 
     fn generate_image_name(name: &str, path: &Path) -> Result<String> {
