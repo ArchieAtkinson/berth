@@ -79,6 +79,7 @@ Each environment is defined in a `environment` sub-table, with the name used to 
 |:-:|:-:|:-:|:-:|
 | `image` | String | The container image to use. Passed to `docker create`. This or the `dockerfile` field must be present. | `image = "alpine:edge"` |
 | `dockerfile` | String | The path to a dockerfile, this will be build and passed to `docker create`. This or the `image` field must be present. | `dockerfile = "$HOME/dockerfile"` |
+| `build_context` | String | The path of a build context directory used when building a provided `dockerfile` | `build_context = "/my/build/context"`
 | `entry_cmd` | String|  The command that will be run in the container when the environment is started. Passed to `docker exec`. This is a required field. | `entry_cmd = ["/bin/bash"]` |
 | `entry_options` | String Array | Options passed to `docker exec` for the `entry_cmd` | `entry_options = ["-it"]`|
 | `cp_cmds`| String Array | A list of commands to copy files to or from the container. Use `CONTAINER`as a placeholder for the container name. Passed directly to `docker cp` | `cp_cmds = [" -L /home/my_script.sh CONTAINER:/home/init_script.sh"]`|
