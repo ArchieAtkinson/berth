@@ -7,22 +7,6 @@ berth is a Blazingly Fast™ CLI-focused alternative to the VSCode Dev Container
 
 `berth` is a work in progress and promises no backwards compatibility at this state. Currently supports Linux and has been tested on WSL2 with Docker Desktop.
 
-## Table of Content
-
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-  - [Presets](#presets)
-    - [Merging](#merging)
-  - [Mounts Environment Variable Expansion Side Effects](#mounts-environment-variable-expansion-side-effects)
-- [Motivations](#motivations)
-- [Possible Future Features](#possible-future-features)
-- [Information for Nerds](#information-for-nerds)
-  - [Container Naming](#container-naming)
-  - [Image Naming](#image-naming)
-  - [Application Dependencies](#application-dependencies)
-  - [Development Dependencies](#development-dependencies)
-
 ## Installation
 
 Requires:
