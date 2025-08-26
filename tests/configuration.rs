@@ -457,6 +457,35 @@ fn both_dockerfile_or_image() {
 }
 
 #[test]
+fn build_context_and_no_dockerfile() {
+    let config = ConfigTest::new(indoc! {r#"
+        [environment.Env]
+        image = "foo"
+        entry_cmd = "hello"
+        build_context = "world"
+    "#});
+    let err = config.get_env("Env").unwrap_err().render();
+    assert_eq!(
+        err,
+        formatdoc!(
+            r#"
+             configuration::environment::validation
+
+               × Malformed Environment
+                ╭─[{}:1:1]
+              1 │ ╭─▶ [environment.Env]
+              2 │ │   image = "foo"
+              3 │ │   entry_cmd = "hello"
+              4 │ ├─▶ build_context = "world"
+                · ╰──── 'build_context' can only be used with a 'dockerfile'
+                ╰────
+            "#,
+            config.file_path()
+        )
+    );
+}
+
+#[test]
 fn preset_not_found() {
     let config = ConfigTest::new(indoc! {r#"
         [preset.preset]

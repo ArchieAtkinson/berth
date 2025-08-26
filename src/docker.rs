@@ -103,7 +103,8 @@ impl DockerHandler {
             .to_string_lossy()
             .to_string();
         let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
-        self.run_docker_command(args)?;
+        let build_context = self.env.build_context.as_ref().unwrap_or(&self.config_dir);
+        self.run_docker_command(args, build_context)?;
 
         spinner.finish_and_clear();
 
@@ -237,7 +238,7 @@ impl DockerHandler {
 
         args.push(&self.env.image);
         args.extend_from_slice(&["tail", "-f", "/dev/null"]);
-        self.run_docker_command(args)
+        self.run_docker_command(args, &self.config_dir)
     }
 
     fn exec_setup_commands(&self) -> Result<()> {
@@ -252,7 +253,7 @@ impl DockerHandler {
             let split_cmd = shell_words::split(cmd).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
 
-            self.run_docker_command(args)?;
+            self.run_docker_command(args, &self.config_dir)?;
         }
         Ok(())
     }
@@ -266,7 +267,7 @@ impl DockerHandler {
             let split_cmd = shell_words::split(&fixed_string).unwrap();
             args.extend(split_cmd.iter().map(|s| s.as_str()));
 
-            self.run_docker_command(args)?;
+            self.run_docker_command(args, &self.config_dir)?;
         }
         Ok(())
     }
@@ -283,20 +284,24 @@ impl DockerHandler {
 
     pub async fn is_anyone_connected(&self) -> Result<bool> {
         let args = vec!["exec", &self.env.name, "ls", "/dev/pts"];
-        let output = self.run_docker_command_with_output(args)?;
+        let output = self.run_docker_command_with_output(args, &self.config_dir)?;
         let ps_count = String::from_utf8(output.stdout).unwrap().lines().count();
 
         let no_connections_ps_count = 2;
         Ok(ps_count > no_connections_ps_count)
     }
 
-    fn run_docker_command_with_output(&self, args: Vec<&str>) -> Result<Output> {
+    fn run_docker_command_with_output(
+        &self,
+        args: Vec<&str>,
+        working_dir: &Path,
+    ) -> Result<Output> {
         let command = format!("{} {}", CONTAINER_ENGINE, shell_words::join(&args));
         info!("{command}");
 
         let output = Command::new(CONTAINER_ENGINE)
             .args(&args)
-            .current_dir(&self.config_dir)
+            .current_dir(working_dir)
             .output()
             .map_err(|_| DockerError::CommandFailed(command.clone()))?;
 
@@ -312,7 +317,8 @@ impl DockerHandler {
         }
     }
 
-    fn run_docker_command(&self, args: Vec<&str>) -> Result<()> {
-        self.run_docker_command_with_output(args).map(|_| ())
+    fn run_docker_command(&self, args: Vec<&str>, working_dir: &Path) -> Result<()> {
+        self.run_docker_command_with_output(args, working_dir)
+            .map(|_| ())
     }
 }

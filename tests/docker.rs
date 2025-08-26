@@ -2,7 +2,11 @@ use bollard::{container::ListContainersOptions, Docker};
 use color_eyre::Result;
 use indoc::{formatdoc, indoc};
 use serial_test::serial;
-use std::{collections::HashMap, fs::File, io::Write};
+use std::{
+    collections::HashMap,
+    fs::{create_dir, File},
+    io::Write,
+};
 use tempfile::{NamedTempFile, TempDir};
 use test_utils::{TestHarness, TestOutput, APK_ADD_ARGS, DEFAULT_TIMEOUT};
 
@@ -296,6 +300,91 @@ fn dockerfile() -> Result<()> {
         .success()?;
 
     dockerfile.close().unwrap();
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn dockerfile_default_build_context() -> Result<()> {
+    let dir = TempDir::new().unwrap();
+    let dockerfile = File::create(dir.path().join("dockerfile")).unwrap();
+    File::create(dir.path().join("test_file")).unwrap();
+    let content = indoc! {
+    r#"
+    FROM alpine:edge
+    COPY test_file test_file
+    "#};
+    write!(&dockerfile, "{}", content).unwrap();
+
+    TestHarness::new()
+        .config_with_path(
+            &formatdoc!(
+                r#"
+            dockerfile = "{}"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+                dir.path().join("dockerfile").to_str().unwrap(),
+            ),
+            &dir.path().join("config.toml"),
+        )?
+        .args(vec![
+            "--config-path",
+            dir.path().join("config.toml").to_str().unwrap(),
+            "[name]",
+        ])?
+        .run(DEFAULT_TIMEOUT)?
+        .send_line("ls")?
+        .expect_string("test_file")?
+        .send_line("exit")?
+        .expect_terminate()?
+        .success()?;
+
+    dir.close()?;
+    Ok(())
+}
+
+#[test]
+#[serial]
+fn dockerfile_provided_build_context() -> Result<()> {
+    let dir = TempDir::new().unwrap();
+    create_dir(dir.path().join("dockerfile_dir")).unwrap();
+    create_dir(dir.path().join("context_dir")).unwrap();
+
+    let dockerfile = File::create(dir.path().join("dockerfile_dir/dockerfile")).unwrap();
+    File::create(dir.path().join("context_dir/test_file")).unwrap();
+    let content = indoc! {
+    r#"
+    FROM alpine:edge
+    COPY test_file test_file
+    "#};
+    write!(&dockerfile, "{}", content).unwrap();
+
+    TestHarness::new()
+        .config(&formatdoc!(
+            r#"
+            dockerfile = "{}"
+            build_context = "{}"
+            entry_cmd = "/bin/ash"
+            create_options = ["-it"]
+            entry_options = ["-it"]
+            "#,
+            dir.path()
+                .join("dockerfile_dir/dockerfile")
+                .to_str()
+                .unwrap(),
+            dir.path().join("context_dir").to_str().unwrap(),
+        ))?
+        .args(vec!["--config-path", "[config_path]", "[name]"])?
+        .run(DEFAULT_TIMEOUT)?
+        .send_line("ls")?
+        .expect_string("test_file")?
+        .send_line("exit")?
+        .expect_terminate()?
+        .success()?;
+
+    dir.close()?;
     Ok(())
 }
 
