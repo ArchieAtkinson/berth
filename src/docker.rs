@@ -44,9 +44,9 @@ pub enum DockerError {
     #[diagnostic(code(cli::container::entering))]
     EnteringContainer(String),
 
-    #[error("The following command return an error code:\n\n{cmd}\n\n")]
-    #[diagnostic(code(cli::container::command::exitcode), help("{stderr}"))]
-    CommandExitCode { cmd: String, stderr: String },
+    #[error("The following command return an error code:\n\n{cmd}\n\n{stdout}")]
+    #[diagnostic(code(cli::container::command::exitcode))]
+    CommandExitCode { cmd: String, stdout: String },
 
     #[error("The following command failed due to an unknown signal:\n{0}")]
     #[diagnostic(code(cli::container::command::killed))]
@@ -214,6 +214,8 @@ impl DockerHandler {
                 ..Default::default()
             };
 
+            Spinner::new("Removing Container");
+
             self.docker
                 .remove_container(&self.env.name, Some(option))
                 .await
@@ -311,7 +313,7 @@ impl DockerHandler {
             Some(0) => Ok(output),
             Some(_) => Err(DockerError::CommandExitCode {
                 cmd: command,
-                stderr: String::from_utf8(output.stderr.clone()).unwrap(),
+                stdout: String::from_utf8(output.stdout.clone()).unwrap(),
             }
             .into()),
         }
