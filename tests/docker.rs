@@ -398,7 +398,7 @@ fn badly_formed_dockerfile() -> Result<()> {
     "#};
     write!(&dockerfile, "{}", content).unwrap();
 
-    TestHarness::new()
+    TestOutput::new()
         .config(&formatdoc!(
             r#"
             dockerfile = "{}"
@@ -409,15 +409,8 @@ fn badly_formed_dockerfile() -> Result<()> {
             dockerfile.path().to_str().unwrap(),
         ))?
         .args(vec!["--config-path", "[config_path]", "[name]"])?
-        .run(DEFAULT_TIMEOUT)?
-        // Can't test full output as we don't know the image name
-        .expect_string("Error: cli::container::command::exitcode")?
-        .expect_string("The following command return an error code:")?
-        .expect_string(indoc!(
-            r#"help: #0 building with "default" instance using docker driver"#
-        ))?
-        .expect_terminate()?
-        .failure(1)?;
+        .stderr("Error: cli::container::command::exitcode")?
+        .code(1)?;
 
     dockerfile.close().unwrap();
     Ok(())

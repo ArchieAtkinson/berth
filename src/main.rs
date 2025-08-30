@@ -74,9 +74,8 @@ async fn main() -> Result<()> {
     };
 
     if let Err(command_error) = result {
-        if let Err(stop_error) = docker.stop_container_if_running().await {
-            return Err(command_error.wrap_err(stop_error));
-        }
+        docker.stop_container_if_running().await?;
+        docker.delete_container_if_exists().await?;
         return Err(command_error);
     }
 
