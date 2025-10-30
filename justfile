@@ -1,5 +1,5 @@
 [no-cd, no-exit-message]
-@ build:
+@ build: clippy
     cargo build
 
 [no-cd, no-exit-message]

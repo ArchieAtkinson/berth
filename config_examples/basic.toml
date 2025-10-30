@@ -1,6 +1,5 @@
 [environment.basic]
-image = "alpine:edge"
-exec_cmds = ["apk add helix asciiquarium"]
-entry_cmd = "/bin/ash"
-create_options = [ "-it"]
-entry_options = ["-it"]
+nix_pkgs = ["stow", "helix", "lazygit", "typos-lsp", "yazi"]
+dotfiles_repo = "https://github.com/ArchieAtkinson/dotfiles.git"
+
+    

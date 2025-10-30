@@ -1,11 +1,11 @@
-use berth::cli;
-use berth::util::Spinner;
-use berth::{cli::AppConfig, configuration::Configuration, docker::DockerHandler};
+use berth::cli::{Action, AppConfig};
+use berth::configuration2::Configuration;
+use berth::devcontainer::DevContainer;
 use log::info;
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use miette::Result;
+use miette::{miette, Result};
 
 fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     let file = FileAppender::builder()
@@ -25,28 +25,6 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn build(docker: &DockerHandler) -> Result<()> {
-    docker.create_new_environment().await?;
-    docker.stop_container_if_running().await?;
-
-    Ok(())
-}
-
-async fn up(docker: &DockerHandler) -> Result<()> {
-    if !docker.does_environment_exist().await? {
-        docker.create_new_environment().await?;
-    } else {
-        let spinner = Spinner::new("Starting Container");
-
-        docker.start_container().await?;
-
-        spinner.finish_and_clear();
-    }
-    docker.enter_environment().await?;
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logger().expect("Failed to setup logger");
@@ -56,32 +34,28 @@ async fn main() -> Result<()> {
     let args = std::env::args_os();
     let app_config = AppConfig::new(args)?;
 
+    if app_config.action == Action::Up {
+        let status = DevContainer::enter()?;
+        if status == 0 {
+            eprintln!("Goodbye!");
+            return Ok(());
+        } else {
+            return Err(miette!("Exited with:{}", status));
+        }
+    }
+
     eprintln!("Using config file at {:?}", app_config.config_path);
 
     let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
 
-    let docker = DockerHandler::new(environment.clone(), &app_config.config_path)?;
+    let dev = DevContainer::new(environment.clone(), app_config.config_path)?;
 
-    let result = {
-        match &app_config.action {
-            cli::Action::Up => up(&docker).await,
-            cli::Action::Build => build(&docker).await,
-            cli::Action::View => {
-                println!("{}", environment.view()?);
-                return Ok(());
-            }
+    match app_config.action {
+        Action::Init { environment: _ } => {
+            dev.build().unwrap();
         }
+        _ => panic!("Haven't gotten to that yet"),
     };
-
-    if let Err(command_error) = result {
-        docker.stop_container_if_running().await?;
-        docker.delete_container_if_exists().await?;
-        return Err(command_error);
-    }
-
-    if app_config.cleanup {
-        docker.delete_container_if_exists().await?;
-    }
 
     info!("Done!");
 

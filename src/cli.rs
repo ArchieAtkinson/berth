@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use miette::{Diagnostic, Result};
 use std::{
     ffi::OsString,
@@ -32,20 +32,17 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    /// Build/rebuild the environment instead of starting it
-    #[arg(long, default_value_t = false, group = "action")]
-    pub build: bool,
-
-    /// View environment definition after it has been parsed by berth
-    #[arg(long, default_value_t = false, group = "action")]
-    pub view: bool,
-
-    /// The environment to be used
-    pub environment: String,
+    ///The action to be used
+    #[command(subcommand)]
+    pub action: Option<Action>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 pub enum Action {
+    Init {
+        environment: String,
+    },
+    #[command(skip)]
     Up,
     Build,
     View,
@@ -56,7 +53,6 @@ pub struct AppConfig {
     pub config_path: PathBuf,
     pub action: Action,
     pub cleanup: bool,
-    pub environment: String,
 }
 
 impl AppConfig {
@@ -79,18 +75,10 @@ impl AppConfig {
             }
         };
 
-        let action = match (cli.view, cli.build) {
-            (true, false) => Action::View,
-            (false, true) => Action::Build,
-            (false, false) => Action::Up,
-            (true, true) => panic!("Parsing should catch this"),
-        };
-
         Ok(AppConfig {
             config_path: Self::set_config_path(cli.config_path)?,
-            action,
+            action: cli.action.unwrap_or(Action::Up),
             cleanup: cli.cleanup,
-            environment: cli.environment,
         })
     }
 

@@ -1,5 +1,5 @@
 [package]
-name = "berth"
+name = "berth2"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,6 +18,8 @@ tokio-util = "0.7"
 sha2 = "0.10"
 miette = { version = "7.5", features = ["fancy"] }
 indicatif = "0.17"
+semver = "1.0.27"
+serde_json = "1.0.145"
 
 [dev-dependencies]
 assert_cmd = "2.0"
