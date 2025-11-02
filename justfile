@@ -4,7 +4,7 @@
 
 [no-cd, no-exit-message]
 @ test: clippy 
-    cargo test
+    cargo insta test --review
 
 [no-cd, no-exit-message]
 @ clippy:

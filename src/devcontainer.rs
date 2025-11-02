@@ -1,4 +1,4 @@
-use crate::configuration2::Environment;
+use crate::config::Environment;
 use log::info;
 use miette::{Diagnostic, Result};
 use semver::{Version, VersionReq};

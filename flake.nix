@@ -27,6 +27,7 @@
               pkg-config
               openssl
               bacon
+              cargo-insta
               ];
           };
         }

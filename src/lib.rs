@@ -1,8 +1,7 @@
 pub mod cli;
-pub mod configuration;
-pub mod configuration2;
+pub mod config;
 pub mod devcontainer;
-pub mod docker;
+pub mod env;
 pub mod util;
 
 pub use util::UnexpectedExt;

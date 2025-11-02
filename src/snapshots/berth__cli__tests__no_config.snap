@@ -1,0 +1,5 @@
+---
+source: src/cli.rs
+expression: err.to_string()
+---
+Could not find config file in $XDG_CONFIG_HOME or $HOME

@@ -7,7 +7,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    cli::{Action, AppConfig},
+    cli::{Action, Settings},
     util::UnexpectedExt,
 };
 
@@ -120,14 +120,14 @@ pub struct Environment {
     pub dotfiles_init_cmd: Option<String>,
 }
 
-pub struct Configuration {
+pub struct Config {
     content: String,
-    app: AppConfig,
+    app: Settings,
     doc: Option<toml_edit::ImDocument<String>>,
 }
 
-impl Configuration {
-    pub fn new(app: &AppConfig) -> Result<Self> {
+impl Config {
+    pub fn new(app: &Settings) -> Result<Self> {
         let content = fs::read_to_string(&app.config_path).unexpected()?;
         Ok(Self {
             content,

@@ -1,13 +1,15 @@
-use berth::cli::{Action, AppConfig};
-use berth::configuration2::Configuration;
+use berth::cli::{Action, Settings};
+use berth::config::Config;
 use berth::devcontainer::DevContainer;
+use berth::env::SysEnv;
 use log::info;
-use log4rs::append::file::FileAppender;
-use log4rs::config::{Appender, Config, Root};
-use log4rs::encode::pattern::PatternEncoder;
 use miette::{miette, Result};
 
 fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
+    use log4rs::append::file::FileAppender;
+    use log4rs::config::{Appender, Config, Root};
+    use log4rs::encode::pattern::PatternEncoder;
+
     let file = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new("{d(%H:%M:%S)} - {l} - {m}\n")))
         .build("/tmp/berth.log")?;
@@ -22,6 +24,8 @@ fn init_logger() -> Result<(), Box<dyn std::error::Error>> {
 
     log4rs::init_config(config)?;
 
+    eprintln!("\nBerth Log File Resumed At: /tmp/berth.log\n");
+
     Ok(())
 }
 
@@ -32,9 +36,11 @@ async fn main() -> Result<()> {
     info!("Start up");
 
     let args = std::env::args_os();
-    let app_config = AppConfig::new(args)?;
+    let env = SysEnv::new();
 
-    if app_config.action == Action::Up {
+    let settings = Settings::new(args, &env)?;
+
+    if settings.action == Action::Up {
         let status = DevContainer::enter()?;
         if status == 0 {
             eprintln!("Goodbye!");
@@ -44,15 +50,16 @@ async fn main() -> Result<()> {
         }
     }
 
-    eprintln!("Using config file at {:?}", app_config.config_path);
+    eprintln!("Using config file at {:?}", settings.config_path);
 
-    let environment = Configuration::new(&app_config)?.find_environment_from_configuration()?;
+    let config = Config::new(&settings)?;
+    let environment = config.find_environment_from_configuration()?;
 
-    let dev = DevContainer::new(environment.clone(), app_config.config_path)?;
+    let dev = DevContainer::new(environment.clone(), settings.config_path)?;
 
-    match app_config.action {
+    match settings.action {
         Action::Init { environment: _ } => {
-            dev.build().unwrap();
+            dev.build()?;
         }
         _ => panic!("Haven't gotten to that yet"),
     };

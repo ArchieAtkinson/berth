@@ -6,6 +6,8 @@ use std::{
 };
 use thiserror::Error;
 
+use crate::env::Env;
+
 #[derive(Debug, Error, Diagnostic)]
 pub enum CliError {
     #[error("{0}")]
@@ -20,43 +22,37 @@ pub enum CliError {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "berth, A CLI to help create development environments without touching repository code",
+    about = "berth, A CLI to help add you dev environment into a devcontainer without touching repository code",
     trailing_var_arg = false
 )]
 struct Cli {
-    /// Path to config file
     #[arg(long, value_name = "FILE")]
     pub config_path: Option<PathBuf>,
 
-    /// Deletes container on exit
     #[arg(long, default_value_t = false)]
     pub cleanup: bool,
 
-    ///The action to be used
     #[command(subcommand)]
-    pub action: Option<Action>,
+    pub action: Action,
 }
 
 #[derive(Debug, Subcommand, Clone, PartialEq, Eq)]
 pub enum Action {
-    Init {
-        environment: String,
-    },
-    #[command(skip)]
+    Init { environment: String },
     Up,
     Build,
     View,
 }
 
-#[derive(Clone)]
-pub struct AppConfig {
+#[derive(Clone, Debug, PartialEq)]
+pub struct Settings {
     pub config_path: PathBuf,
     pub action: Action,
     pub cleanup: bool,
 }
 
-impl AppConfig {
-    pub fn new<I, T>(args: I) -> Result<AppConfig>
+impl Settings {
+    pub fn new<I, T>(args: I, env: &impl Env) -> Result<Settings>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
@@ -75,14 +71,14 @@ impl AppConfig {
             }
         };
 
-        Ok(AppConfig {
-            config_path: Self::set_config_path(cli.config_path)?,
-            action: cli.action.unwrap_or(Action::Up),
+        Ok(Settings {
+            config_path: Self::set_config_path(cli.config_path, env)?,
+            action: cli.action,
             cleanup: cli.cleanup,
         })
     }
 
-    fn set_config_path(config_path: Option<PathBuf>) -> Result<PathBuf> {
+    fn set_config_path(config_path: Option<PathBuf>, env: &impl Env) -> Result<PathBuf> {
         if let Some(path) = config_path {
             return if path.exists() && path.is_file() {
                 Ok(path)
@@ -91,26 +87,82 @@ impl AppConfig {
             };
         }
 
-        if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            let xdg_path = Path::new(&xdg_config)
-                .join(".config")
-                .join("berth")
-                .join("config.toml");
-            if xdg_path.exists() {
-                return Ok(xdg_path);
-            }
-        }
+        let rel_config_path = Path::new(".config/berth/config.toml");
 
-        if let Ok(home) = std::env::var("HOME") {
-            let home_path = Path::new(&home)
-                .join(".config")
-                .join("berth")
-                .join("config.toml");
-            if home_path.exists() {
-                return Ok(home_path);
-            }
-        }
+        ["XDG_CONFIG_HOME", "HOME"]
+            .iter()
+            .filter_map(|&v| env.var(v))
+            .map(|v| PathBuf::from(v).join(rel_config_path))
+            .find(|p| p.exists() && p.is_file())
+            .ok_or_else(|| CliError::NoConfigInStandardLocation.into())
+    }
+}
 
-        Err(CliError::NoConfigInStandardLocation.into())
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use insta::assert_snapshot;
+    use tempfile::{NamedTempFile, TempDir};
+
+    use crate::env::tests::MockEnv;
+
+    use super::*;
+
+    #[test]
+    fn no_command() {
+        let env = MockEnv::new();
+        let config = Settings::new(["berth"], &env);
+
+        let err = config.err().unwrap();
+        assert_snapshot!(err);
+    }
+
+    #[test]
+    fn no_config() {
+        let env = MockEnv::new();
+        let config = Settings::new(["berth", "up"], &env);
+
+        let err = config.err().unwrap();
+        assert_snapshot!(err.to_string());
+    }
+
+    #[test]
+    fn config_from_from_env_var() {
+        let tmp_dir = TempDir::new().unwrap();
+        let dir_path = tmp_dir.path().join("home");
+        let file_path = dir_path.join(".config/berth/config.toml");
+        fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        fs::File::create(&file_path).unwrap();
+
+        let mut env = MockEnv::new();
+        env.insert("HOME", dir_path.as_path().to_str().unwrap());
+
+        let config = Settings::new(["berth", "up"], &env).unwrap();
+
+        let config = config;
+        let expected = Settings {
+            config_path: file_path,
+            action: Action::Up,
+            cleanup: false,
+        };
+        assert_eq!(config, expected);
+    }
+
+    #[test]
+    fn up_command_from_config_path() {
+        let tmp_file = NamedTempFile::new().unwrap();
+        let file_path = tmp_file.path().to_str().unwrap();
+
+        let env = MockEnv::new();
+        let config = Settings::new(["berth", "--config-path", file_path, "up"], &env).unwrap();
+
+        let config = config;
+        let expected = Settings {
+            config_path: file_path.into(),
+            action: Action::Up,
+            cleanup: false,
+        };
+        assert_eq!(config, expected);
     }
 }
