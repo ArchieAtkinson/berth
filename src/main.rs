@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
     eprintln!("Using config file at {:?}", settings.config_path);
 
     let config = Config::new(&settings)?;
+
     let environment = config.find_environment_from_configuration()?;
 
     let dev = DevContainer::new(environment.clone(), settings.config_path)?;

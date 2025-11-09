@@ -6,4 +6,14 @@
 	},
   "workspaceMount": "source=${localWorkspaceFolder},target=/root/basic,type=bind", 
   "workspaceFolder": "/root/basic",
+  "mounts" : [
+      {
+          "source": "${localEnv:SSH_AUTH_SOCK}",
+          "target": "${localEnv:SSH_AUTH_SOCK}",
+          "type": "bind"
+      }
+  ],
+  "remoteEnv": {
+      "SSH_AUTH_SOCK": "${localEnv:SSH_AUTH_SOCK}",
+  }
 }    

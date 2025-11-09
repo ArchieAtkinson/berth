@@ -1,10 +1,11 @@
-use crate::config::Environment;
+use crate::{config::Environment, UnexpectedExt};
 use log::info;
 use miette::{Diagnostic, Result};
 use semver::{Version, VersionReq};
 use std::{
+    io::{BufRead, BufReader},
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
 };
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -23,6 +24,12 @@ pub enum DevContError {
     #[error("The following command failed to run:\n{0}")]
     #[diagnostic(code(cli::container::command::failed))]
     CommandFailed(String),
+}
+
+struct CommandOut {
+    status: i32,
+    stdout: String,
+    stderr: String,
 }
 
 pub struct DevContainer {
@@ -71,6 +78,46 @@ impl DevContainer {
         Ok(output)
     }
 
+    fn send_command_with_stream(args: &[&str]) -> Result<CommandOut> {
+        info!("{} {}", "devcontainer", args.join(" "));
+        let mut cmd = Command::new("devcontainer")
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut out = CommandOut {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        };
+
+        {
+            let stdout = cmd.stdout.as_mut().unexpected()?;
+            let stdout_reader = BufReader::new(stdout);
+            let stdout_lines = stdout_reader.lines();
+
+            let stderr = cmd.stderr.as_mut().unexpected()?;
+            let stderr_reader = BufReader::new(stderr);
+            let stderr_lines = stderr_reader.lines();
+
+            for (stdout, stderr) in stdout_lines.zip(stderr_lines) {
+                let stdout = stdout.unwrap();
+                println!("{}", &stdout);
+                out.stdout.push_str(&stdout);
+
+                let stderr = stderr.unwrap();
+                println!("{}", &stderr);
+                out.stderr.push_str(&stderr);
+            }
+        }
+
+        cmd.wait().unwrap();
+
+        Ok(out)
+    }
+
     pub fn build(&self) -> Result<()> {
         let packages = self.env.nix_pkgs.join(",");
 
@@ -105,23 +152,14 @@ impl DevContainer {
             }
         }
 
-        let output = Self::send_command(&args)?;
-        info!("{}", String::from_utf8(output.stdout).unwrap());
-        info!("{}", String::from_utf8(output.stderr).unwrap());
-        info!("{:#?}", output.status);
+        let output = Self::send_command_with_stream(&args)?;
+        info!("{}", output.stdout);
+        info!("{}", output.stderr);
+        info!("{}", output.status);
 
-        // let mut args = vec!["exec", "--workspace-folder", ".", "nix-env", "-iA"];
-        // let packages = self
-        //     .env
-        //     .nix_pkgs
-        //     .iter()
-        //     .map(|s| format!("nixpkgs.{s}"))
-        //     .collect::<Vec<String>>();
-        // packages.iter().for_each(|s| args.push(&s));
-        // let output = Self::send_command(&args)?;
-        // info!("{:#?}", output.stdout);
-        // info!("{:#?}", output.stderr);
-        // info!("{:#?}", output.status);
+        if output.status != 0 {
+            return Err(DevContError::CommandFailed(output.stderr))?;
+        }
 
         Ok(())
     }
@@ -129,9 +167,9 @@ impl DevContainer {
     pub fn enter() -> Result<i32> {
         let code = Command::new(Self::CLI_PATH)
             .args(["exec", "--workspace-folder", ".", "bash"])
-            .current_dir(std::env::current_dir().unwrap())
+            .current_dir(std::env::current_dir().unexpected()?)
             .status()
-            .map_err(|_| DevContError::CommandFailed("Oops".to_owned()))?
+            .unexpected()?
             .code()
             .expect("Command Failed");
         info!("{}", code);

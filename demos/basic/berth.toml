@@ -1,5 +1,3 @@
 [environment.basic]
 nix_pkgs = ["stow", "helix", "lazygit", "typos-lsp", "yazi"]
 dotfiles_repo = "https://github.com/ArchieAtkinson/dotfiles.git"
-
-    
