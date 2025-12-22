@@ -12,7 +12,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::{cli::AppConfig, util::UnexpectedExt};
+use crate::{cli::AppConfig, devcontainer::Metadata, util::UnexpectedExt};
 
 #[derive(Debug, Error, PartialEq, Diagnostic)]
 pub enum ConfigError {
@@ -109,6 +109,9 @@ pub struct TomlEnvironment {
     build_context: String,
 
     #[serde(default)]
+    devcontainer_json: String,
+
+    #[serde(default)]
     entry_options: Vec<String>,
 
     #[serde(default)]
@@ -142,6 +145,9 @@ pub struct TomlPreset {
 
     #[serde(default)]
     build_context: String,
+
+    #[serde(default)]
+    devcontainer_json: String,
 
     #[serde(default)]
     entry_options: Vec<String>,
@@ -178,6 +184,7 @@ pub struct Environment {
     pub image: String,
     pub dockerfile: Option<PathBuf>,
     pub build_context: Option<PathBuf>,
+    pub devcontainer_json: Option<String>,
     pub entry_cmd: String,
     pub entry_options: Vec<String>,
     pub exec_cmds: Vec<String>,
@@ -207,6 +214,7 @@ impl Configuration {
         let config = self.check_presets_exist(config)?;
         let config = self.valid_unique_fields(config)?;
         let envs = self.merge_presets(config)?;
+        let envs = self.inject_devcontaier(envs)?;
         let envs = self.validate_environments(envs)?;
         self.create_environment(envs)
     }
@@ -231,6 +239,40 @@ impl Configuration {
                 Err(labeled_error!(self, TomlParse, span, label_message).into())
             }
         }
+    }
+
+    fn inject_devcontaier(&self, mut envs: TomlEnvs) -> Result<TomlEnvs> {
+        for (_, env) in envs.iter_mut() {
+            if !env.devcontainer_json.is_empty() {
+                let mut options = ExpandOptions::new();
+                options.expansion_type = Some(ExpansionType::Unix);
+
+                let path = envmnt::expand(&env.devcontainer_json, Some(options));
+                let json = Metadata::new(path).unwrap();
+
+                if let Some(user) = json.remote_user {
+                    let user_commands = vec![format!("-u {user}"), format!("-e USER={user}")];
+                    env.exec_options.extend_from_slice(&user_commands);
+                    env.entry_options.extend_from_slice(&user_commands);
+                }
+
+                if let Some(mount) = json.workspace_mount {
+                    env.create_options.push(mount);
+                }
+
+                if env.provided_image.is_empty() {
+                    env.provided_image = json.image.unwrap_or_default();
+                }
+
+                if env.dockerfile.is_empty() && env.build_context.is_empty() {
+                    if let Some(build) = json.build {
+                        env.dockerfile = build.dockerfile.unwrap_or_default();
+                        env.build_context = build.context.unwrap_or_default();
+                    }
+                }
+            }
+        }
+        Ok(envs)
     }
 
     fn check_presets_exist(&self, config: TomlConfiguration) -> Result<TomlConfiguration> {
@@ -294,6 +336,7 @@ impl Configuration {
                 "image" => !env.provided_image.is_empty(),
                 "dockerfile" => !env.dockerfile.is_empty(),
                 "build_context" => !env.build_context.is_empty(),
+                "devcontainer_json" => !env.devcontainer_json.is_empty(),
                 _ => unreachable!("Unknown field {field}"),
             };
 
@@ -315,6 +358,9 @@ impl Configuration {
                     "image" => !config.presets[preset_name].provided_image.is_empty(),
                     "dockerfile" => !config.presets[preset_name].dockerfile.is_empty(),
                     "build_context" => !config.presets[preset_name].build_context.is_empty(),
+                    "devcontainer_json" => {
+                        !config.presets[preset_name].devcontainer_json.is_empty()
+                    }
                     _ => unreachable!("Unknown field {field}"),
                 };
 
@@ -359,7 +405,13 @@ impl Configuration {
             Ok(())
         };
 
-        let unique_fields = ["entry_cmd", "image", "dockerfile", "build_context"];
+        let unique_fields = [
+            "entry_cmd",
+            "image",
+            "dockerfile",
+            "build_context",
+            "devcontainer_json",
+        ];
         for (env_name, env) in &config.environments {
             for field in unique_fields {
                 check_unique(field, env, env_name)?;
@@ -383,6 +435,10 @@ impl Configuration {
 
                 if !preset.dockerfile.is_empty() {
                     env.dockerfile = preset.dockerfile.clone();
+                }
+
+                if !preset.devcontainer_json.is_empty() {
+                    env.devcontainer_json = preset.devcontainer_json.clone();
                 }
 
                 env.entry_options.extend_from_slice(&preset.entry_options);
@@ -503,6 +559,7 @@ impl Configuration {
             dockerfile,
             build_context,
             entry_cmd: env.entry_cmd,
+            devcontainer_json: Some(env.devcontainer_json),
             entry_options: env.entry_options,
             exec_cmds: env.exec_cmds,
             exec_options: env.exec_options,

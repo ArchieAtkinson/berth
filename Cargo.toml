@@ -18,6 +18,7 @@ tokio-util = "0.7"
 sha2 = "0.10"
 miette = { version = "7.5", features = ["fancy"] }
 indicatif = "0.17"
+serde_json5 = "0.2.1"
 
 [dev-dependencies]
 assert_cmd = "2.0"

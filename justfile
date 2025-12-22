@@ -3,8 +3,8 @@
     cargo build
 
 [no-cd, no-exit-message]
-@ test: clippy 
-    cargo test
+test *args: clippy 
+    cargo test {{args}}
 
 [no-cd, no-exit-message]
 @ clippy:
