@@ -1,0 +1,5 @@
+[environment.dev]
+devcontainer_json = "$PWD/.devcontainer/devcontainer.json"
+entry_cmd = "/bin/bash"
+create_options = [ "-it"]
+entry_options = ["-it"]

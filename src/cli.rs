@@ -97,7 +97,7 @@ impl AppConfig {
     fn set_config_path(config_path: Option<PathBuf>) -> Result<PathBuf> {
         if let Some(path) = config_path {
             return if path.exists() && path.is_file() {
-                Ok(path)
+                Ok(path.canonicalize().unwrap())
             } else {
                 Err(CliError::NoConfigAtProvidedPath(path.as_os_str().into()).into())
             };

@@ -1,0 +1,7 @@
+{
+	"name": "MyPreset",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+  "workspaceMount": "source=${localWorkspaceFolder},target=/root,type=bind"
+}    

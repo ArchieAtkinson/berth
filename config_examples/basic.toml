@@ -4,3 +4,11 @@ exec_cmds = ["apk add helix asciiquarium"]
 entry_cmd = "/bin/ash"
 create_options = [ "-it"]
 entry_options = ["-it"]
+
+[environment.dev]
+devcontainer_json = "$PWD/.devcontainer/devcontainer.json"
+create_options = ["-it", "-v $SSH_AUTH_SOCK:$SSH_AUTH_SOCK", "-e SSH_AUTH_SOCK=$SSH_AUTH_SOCK"]
+cp_cmds = ["/home/archie/dotfiles/bundler/bundle/.  CONTAINER:/tmp/bundle"]
+exec_cmds = ["bash -c 'cd /tmp/bundle && bash install.sh'"]
+entry_options = ["-it", "-e EDITOR=hx"]
+entry_cmd = "/bin/bash"

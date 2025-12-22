@@ -52,9 +52,9 @@ pub enum DockerError {
     #[diagnostic(code(cli::container::command::killed))]
     CommandKilled(String),
 
-    #[error("The following command failed to run:\n{0}")]
+    #[error("The following command failed to run:\n{0}\n{1}")]
     #[diagnostic(code(cli::container::command::failed))]
-    CommandFailed(String),
+    CommandFailed(String, String),
 }
 
 macro_rules! docker_err {
@@ -102,8 +102,10 @@ impl DockerHandler {
             .as_path()
             .to_string_lossy()
             .to_string();
+
         let args = vec!["build", "-t", &self.env.image, "-f", &dockerfile_path, "."];
         let build_context = self.env.build_context.as_ref().unwrap_or(&self.config_dir);
+
         self.run_docker_command(args, build_context)?;
 
         spinner.finish_and_clear();
@@ -154,7 +156,7 @@ impl DockerHandler {
         let exit_code = Command::new(CONTAINER_ENGINE)
             .args(&args)
             .status()
-            .map_err(|_| DockerError::CommandFailed(command))?
+            .map_err(|e| DockerError::CommandFailed(command.clone(), e.to_string()))?
             .code();
 
         let error_str = match exit_code {
@@ -305,7 +307,7 @@ impl DockerHandler {
             .args(&args)
             .current_dir(working_dir)
             .output()
-            .map_err(|_| DockerError::CommandFailed(command.clone()))?;
+            .map_err(|e| DockerError::CommandFailed(command.clone(), e.to_string()))?;
 
         let status_code = output.status.code();
         match status_code {
@@ -313,7 +315,7 @@ impl DockerHandler {
             Some(0) => Ok(output),
             Some(_) => Err(DockerError::CommandExitCode {
                 cmd: command,
-                stdout: String::from_utf8(output.stdout.clone()).unwrap(),
+                stdout: String::from_utf8(output.stderr.clone()).unwrap(),
             }
             .into()),
         }
